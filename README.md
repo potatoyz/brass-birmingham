@@ -1,371 +1,306 @@
-# Brass: Birmingham
+# 3D 版联机伯明翰
 
-[![Docs](https://img.shields.io/badge/docs-mintlify-18a34a?style=flat-square)](https://mintlify.com/npow/brass-birmingham)
+**Brass: Birmingham 3D Online** —— 用 three.js 重写的《工业革命：伯明翰》网页联机版（非官方粉丝作品）
 
-A digital adaptation of the award-winning board game by Roxley Games. Build your industrial empire across the English Midlands during the height of the Industrial Revolution (1770-1870).
+- 🎮 **试玩（3D 版）**：<http://<服务器地址>:28789>
+- 🗺️ **经典 2D 版**：<http://<服务器地址>:28788>
+- 🌿 **代码分支**：3D 版的全部代码在 [`three` 分支](https://github.com/potatoyz/brass-birmingham/tree/three)；`main` 分支是联机 + 中文化后的经典 2D 版。
 
-> **Note:** This is an unofficial fan project. [Brass: Birmingham](https://roxley.com/products/brass-birmingham) is designed by Gavan Brown, Matt Tolman, and Martin Wallace, published by Roxley Games. Please support the original by purchasing the physical game.
+本项目 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)（单机同屏的 2D 网页版）。在保留它的规则引擎的前提下，加了服务端联机房间，做了全量简体中文化，并重写了一套 3D 前端。3D 前端专门针对“看清版图、点得准、知道为什么不能点”这几个实际痛点设计。
 
-## 联机版说明（本 fork 的改动） / Online fork
+<p align="center">
+  <img src="docs/images/3d-overview.jpg" alt="4 人局中盘：3D 版图、四色玩家资产、左侧玩家卡、右侧产业板" width="100%">
+  <br><em>4 人局：四色板块与连线、顶栏图例、左侧玩家卡、右侧“我的产业板”</em>
+</p>
 
-> 本仓库 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)，在原版"同屏轮流"玩法之外加入了**多人多设备联机房间**，并修复了原版**卖货（Sell）啤酒**相关的两个规则问题。原版内容、致谢与"非官方粉丝作品"声明见下文，保持不变。
+---
 
-### 联机房间
+## 目录
 
-- **开房 / 加入**：首页填昵称 →「创建房间」得到 4 位房间号和邀请链接（`?room=CODE`）；朋友打开链接或输入房间号即可入座。
-- **大厅**：房主选择 2–4 人，空位可设为 AI（简单 / 普通 / 困难），也可移出玩家；人齐后房主开始游戏。
-- **服务端权威**：所有动作在服务器上用原版规则引擎（`gameState` / `gameLogic` / `aiPlayer`）校验并执行，非法操作被拒绝且不改动状态；AI 也在服务端运行。
-- **隐藏信息**：每个客户端只收到自己的手牌，他人手牌和牌堆内容不会下发。
-- **实时同步 + 断线重连**：WebSocket 实时推送；浏览器用 localStorage 里的令牌，刷新或断网后回到原座位。房主可把掉线玩家的座位交给 AI，之后再还给真人。
-- **持久化**：房间保存在 `DATA_DIR/rooms.json`（原子写入），服务重启后对局恢复；超过 7 天无活动的房间自动清理。
-- **同屏模式保留**：首页展开「本机同屏模式」即为原版玩法；直接用 `file://` 打开也仍是原版单机模式。
+- [创新点](#创新点)
+- [与上游 npow/brass-birmingham 的对比](#与上游-npowbrass-birmingham-的对比)
+- [技术架构](#技术架构)
+- [目录结构](#目录结构)
+- [本地运行](#本地运行)
+- [部署](#部署)
+- [测试](#测试)
+- [更多截图](#更多截图)
+- [致谢与版权](#致谢与版权)
 
-### 卖货 / 啤酒修复（原版就存在的问题）
+---
 
-1. **可以逐桶选择啤酒**：原版卖货窗口只有"是否用商人啤酒"一个勾选框，酿酒厂啤酒总是自动按"先自己、后对手"的顺序取，玩家无法选择（例如想用相连对手的啤酒保住自己的）。现在每桶啤酒都有下拉框可选：自己的酿酒厂（无需相连）、相连的对手酿酒厂、或所卖商人的啤酒（每次出售最多 1 桶，获得该商人奖励），并显示剩余桶数；仍提供合理的默认选择。服务器会校验每桶来源是否合法。
-2. **一次卖多个产业时整批校验**：原版只逐个检查产业"单独能不能卖"，执行时若前面的产业把啤酒用完，后面的会被静默跳过——行动照样算成功、牌照样弃掉，甚至会出现**喝了商人啤酒拿了奖励、产业却没卖出**的情况。现在执行前对整批做啤酒分配校验（自动选择时会搜索所有可行分配）；不可行就整批拒绝、不改动任何状态，并给出清楚的提示。AI 也只提交能付得起的批次。
+## 创新点
 
-### 运行
+下面每一条都写了：解决什么问题、怎么做的、代码在哪里。
 
-需要 Node.js 18+。
+### 1. three.js 3D 版图 + 受限俯视镜头 + HTML 文字层
 
-```bash
-npm install
-npm start          # 默认 http://0.0.0.0:28788
+**问题**：原版是一张 SVG 平面图，缩放后板块、方块挤在一起，层级容易错乱（卡牌、板块互相遮挡）。但如果随便做成能自由旋转的 3D，桌游又会变得难读、难点。
+
+**做法**（`three-src/board3d.js`）：
+- 把印刷版图（2048×2048）贴在一块有厚度的 3D 桌面上。板块、连线、资源方块、啤酒桶、商人板块都是真实的 3D 物体，有阴影、有高度，所以叠放层级是天然正确的。
+- 镜头用 OrbitControls，但加了限制：最大倾角约 35°，水平旋转限制在约 ±46°，拖动范围被夹在版图之内，并且以鼠标位置为中心缩放。左键平移、右键旋转、滚轮缩放；手机上单指平移，双指缩放/旋转。这样有立体感，但永远不会“转丢”，随时可以一键复位。
+- 所有文字（玩家卡、面板、提示、日志、手牌名）都是浮在画布上的 HTML，而不是画进 3D 里。中文清晰、可选中，并跟随浏览器缩放。
+- 按需渲染：只有状态或镜头变化时才重绘（`dirty` 标记），静止时不占 GPU。
+- three.js 按需 tree-shaking，用 esbuild 打成一个约 600KB 的 `js/three/bb3d.min.js`，没有运行时框架。
+
+### 2. “先点再确认”的交互，取代组合下拉列表
+
+**问题**：原版建造/建网要先选动作，再在弹窗列表里从“地点 × 产业 × 手牌”的组合里挑，然后再选弃牌。步骤多，而且看不到位置在版图哪里。
+
+**做法**（`three-src/app.js`）：
+- **两种顺序都支持**：先选一张手牌，版图会高亮它能建的位置；或者先点版图上的金色位置，再从能用的手牌里选。端到端测试分别统计了 `build:card→slot` 和 `build:slot→card` 两条路径。
+- 每一步都把可选目标直接高亮在 3D 版图上（位置、连线、己方可卖产业等）。底部面板列出本次的费用明细（钱、煤/铁来源与价格），最后点“确认”才提交，中途可以取消。
+- 建网、双铁路、销售（逐桶选啤酒）、发展（选 1–2 块）、侦察都走同一套“点选 → 面板汇总 → 确认”流程。
+
+### 3. 灰按钮会说出“为什么不能点”，原因来自规则引擎
+
+**问题**：按钮变灰但不知道原因，新手会卡住。上游虽然有 `getDisabledReason`，但只给笼统的提示，个别情况还不准，比如发展其实是缺钱，却提示“没有可发展的板块”。
+
+**做法**（`App.whyNot`）：
+- 用规则引擎把这个动作重新判定一遍，再把阻碍条件逐项拆开。例如临时假设钱足够，看能不能做，以此判断是不是“钱”卡住了；临时去掉煤/铁需求，判断是不是缺资源。
+- 给出带具体数字的原因，比如“资金不足：建网需要 £3，你只有 £2”“没有可销售的产业：你在版图上没有未翻面的棉纺厂/制造厂/陶瓷厂”。
+- 按钮不再用 `disabled` 属性（因为它会吞掉悬停事件），而是用样式置灰。悬停或长按显示原因，点一下也会弹出提示。
+- 当只剩贷款、侦察、跳过可用时，提示栏直接写“现在只能贷款、侦察、跳过”，并逐条列出其他动作为什么不行。
+
+<p align="center"><img src="docs/images/3d-disabled-reason.jpg" alt="销售按钮置灰并显示原因" width="70%"></p>
+
+### 4. 沿印刷线路自动描出的连线（含农场酿酒厂支线）
+
+**问题**：早先连线高亮只是两城之间的直线，和版图上弯曲的铁路/运河对不上。带农场酿酒厂的连线（如基德明斯特—伍斯特，规则上是同一条连线、同时连通南边的农场）被画成两段，看起来像两条线，还像是指向农场。
+
+**做法**（`scripts/trace-routes.py` → 生成 `three-src/routes.js`）：
+- 在版图图像上做最短路径搜索（Dijkstra，1024 网格）。代价函数同时偏好运河的蓝色边缘和铁路的深色枕木，从而沿印刷线路走；再用 RDP 算法把路径简化成折线。
+- 农场支线单独从农场寻路接到主线上，和主线画成同一条高亮。连线标记放在主线上避开障碍的位置，并顺着线路方向摆放。
+- 只有 1 条线（科尔布鲁克代尔—基德明斯特）需要人工路径点（`scripts/route-overrides.json`）。
+- 共 39 条连线。悬停提示写作“基德明斯特 — 伍斯特（经农场酿酒厂）”。
+
+<p align="center"><img src="docs/images/3d-link-route-kidderminster.jpg" alt="基德明斯特—伍斯特连线沿印刷线路高亮，并带农场支线" width="55%"></p>
+
+### 5. 四色玩家资产 + 归属一眼可辨 + 聚焦某个玩家
+
+**问题**：上游的板块素材是一套混色的单套图，看不出板块是谁的。4 人局里尤其难分。
+
+**做法**：
+- 玩家 1–4 分别使用紫、黄、橙、青四套完整的板块和船/火车图（每色 60 张，共 240 张，`assets/tiles/<颜色>/`）。
+- 每个板块和连线标记都有加粗的玩家色边框、同色底座光晕，以及角标徽章（名字首字母 + 座位号）；连线下面垫一条玩家色色带。所以不只靠颜色区分，色弱也能分清，翻面后仍然可见。
+- 青色板块在屏幕上偏灰，所以它的主题色用了鲜艳的青色来区分。
+- 顶栏图例和玩家卡与板块同色。悬停某个玩家时，只亮显他的产业和连线，其他人的淡化；点图例可以锁定。
+
+<p align="center"><img src="docs/images/3d-ownership-closeup.jpg" alt="四色板块、徽章与连线色带特写" width="100%"></p>
+
+### 6. 完整的玩家产业板（自己和对手的都能看）
+
+**问题**：原来只显示每种产业的“下一块”，看不到后面还有什么，也看不到对手还剩什么。
+
+**做法**：
+- 右侧“我的产业板”每种产业一行，用 14px 文字直接写出费用、煤/铁、销售需啤酒数、分数、收入、连线分，以及每个等级还剩几块。下一块可建的等级高亮，用完的划掉。
+- 点“完整板 ▸”或任意玩家卡，可以打开完整产业板：按产业和等级排开该玩家颜色的全部正面图，标出“下一块”、剩余/总数、仅运河/仅铁路、不可发展，用完的变灰。可以切换查看对手的板。
+
+<p align="center"><img src="docs/images/3d-player-board.jpg" alt="对手的完整产业板" width="100%"></p>
+
+### 7. 市场与资源实物化
+
+煤炭市场和铁市场按当前数量，把黑色煤块和橙色铁块放进印刷的价格格子里（格子坐标从版图上测得），便宜的格子先空。已建的煤矿/铁厂上放着剩余的煤/铁块，酿酒厂和商人处放啤酒桶。这些都随状态实时更新。
+
+### 8. 悬停 / 长按看大图
+
+手牌、产业板、版图上的已建板块，桌面端悬停、手机端长按（约 0.4 秒）都会弹出大图和中文说明，包括费用、产出、翻面得分、收入、连线分、适用时代。
+
+### 9. 全量简体中文化（含图片），兼容旧存档
+
+- 界面、日志、提示、计分全部是中文。版图 `board.jpg`、卡牌、玩家板图片里的英文也重绘成了中文。
+- 内部 id、协议字段、存档 key 一律不变。手牌名由 id 推导，旧房间里的英文日志和计分标题会在客户端映射成中文，所以升级前创建的房间可以继续玩。
+
+### 10. 服务端权威的联机房间
+
+- 4 位房间号 + 邀请链接，大厅可以选 2–4 人，空位可以放 AI（简单/普通/困难）。
+- **服务端权威**：所有动作都在 Node 服务器上用同一份规则引擎校验并执行，非法操作会被拒绝且不改动状态；AI 也在服务端跑。
+- **隐藏信息**：每个客户端只收到自己的手牌。
+- **断线重连**：浏览器在 localStorage 里保存座位令牌，刷新或断网后回到原座位。房主可以把掉线玩家的座位交给 AI 代打，玩家回来后点“收回控制”就能拿回来。
+- **持久化**：房间原子写入 `DATA_DIR/rooms.json`，服务重启后对局恢复；7 天没有活动的房间会自动清理。
+- 修复了上游销售的两个问题：一是可以逐桶选择啤酒来源；二是一次卖多个产业时整批校验，避免后面的产业被静默跳过，甚至出现“喝了商人啤酒拿了奖励、产业却没卖出”的情况。
+
+### 11. 规则与客户端共用同一份引擎
+
+`js/gameData.js / gameState.js / gameLogic.js / aiPlayer.js` 在浏览器里直接用 `<script>` 加载，在服务端由 `server/engine.js` 用 Node `vm` 加载同一份文件。3D 前端的高亮、可选目标、灰按钮原因，和服务端的最终校验，用的是同一套判定，不会出现“前端能点、服务器拒绝”这类两套规则不一致的问题。3D 前端只负责呈现和选择，不重新实现规则。
+
+### 12. 双浏览器点击整局的端到端测试
+
+`test/three-play.mjs` 启动两个真实的 Chrome，只通过点击 3D 界面（手牌、版图位置、连线、按钮），从开局一直打到游戏结束，覆盖建造（两种顺序）、建网、双铁路、销售、发展、贷款、侦察、跳过、商人奖励。每一步都检查服务器是否接受、两端状态是否同步，失败时自动截图。这个测试真的抓到过规则 bug：双铁路的第二条线选项没有扣掉第一条线用掉的煤、也没检查 £15 加两份煤的总价，现已在引擎里修复。
+
+### 13. 低配模式与手机触屏
+
+- 低配模式：`?low=1`，或 CPU 核数不超过 2 时自动启用。关闭阴影和抗锯齿，像素比固定为 1，降低各向异性过滤。
+- 手机：窄屏下侧栏改为可展开的抽屉，手牌和按钮放大，支持单指平移、双指缩放、长按看详情。`test/three-mobile.mjs` 以 390×844 触屏视口跑一遍建造流程，并检查没有控制台错误。
+
+---
+
+## 与上游 npow/brass-birmingham 的对比
+
+| 方面 | 上游 npow/brass-birmingham | 本项目（3D 版联机伯明翰） |
+|---|---|---|
+| 游玩方式 | 单机同屏轮流 | 多设备联机房间（保留同屏模式，在经典版中） |
+| 规则执行 | 浏览器本地 | 服务端权威，同一份引擎前后端共用 |
+| 版图 | 2D SVG 平面版图 | three.js 3D 桌面 + 受限俯视镜头（经典 2D 版仍保留） |
+| 操作 | 选动作 → 弹窗组合列表 → 选弃牌 | 先牌后位置 / 先位置后牌，版图高亮 → 面板汇总 → 确认 |
+| 不可用原因 | 笼统提示 | 规则引擎逐项判定，给出带数字的原因；“只能贷款/侦察/跳过”提示 |
+| 连线显示 | 两城直线 | 沿印刷线路的折线，农场支线并入同一条 |
+| 玩家区分 | 单套混色板块 | 四色板块 + 边框/底座/徽章/色带 + 图例 + 聚焦 |
+| 产业板 | 只显示每种产业的下一块 | 完整产业板（全部等级与数字），可看对手 |
+| 语言 | 英文 | 全量简体中文（含版图和卡牌图片），兼容旧存档 |
+| 销售 | 啤酒自动分配；多产业逐个检查 | 逐桶选择啤酒；整批校验 |
+| 测试 | — | 联机整局测试、销售场景测试、双浏览器 3D 点击整局测试、手机测试 |
+
+---
+
+## 技术架构
+
+```mermaid
+flowchart LR
+  subgraph Browser["浏览器（每位玩家）"]
+    UI["three-src/app.js<br/>HTML 界面 / 交互状态机 / 原因判定"]
+    B3["three-src/board3d.js<br/>three.js 版图、板块、连线、市场"]
+    R["three-src/routes.js<br/>预先描好的连线折线"]
+    EngC["js/gameData · gameState · gameLogic<br/>（与服务端同一份）"]
+    UI --> B3
+    B3 --> R
+    UI --> EngC
+  end
+  subgraph Server["Node 服务端 server/index.js"]
+    WS["HTTP 静态资源 + WebSocket /ws"]
+    Rooms["房间 / 座位令牌 / 隐藏手牌视图"]
+    EngS["server/engine.js<br/>vm 加载同一份规则引擎 + aiPlayer"]
+    Store[("DATA_DIR/rooms.json<br/>原子写入")]
+    WS --> Rooms --> EngS
+    Rooms --> Store
+  end
+  UI <-- "动作 / 状态推送" --> WS
 ```
 
-环境变量：
+- 客户端发送的是“动作 + 参数”（如 `{action:'network', cardIndex, pendingData:{connectionId, connectionId2}}`）；服务器校验并执行后，按座位分别下发去掉他人手牌的状态。
+- 构建只有一步：`npm run build:three`（esbuild），产物是 `js/three/bb3d.min.js`，已提交到仓库，部署时不需要构建。
+- 连线折线由 `scripts/trace-routes.py`（Python + NumPy + Pillow）离线生成，运行时不做图像处理。
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
+## 目录结构
+
+（`three` 分支）
+
+```
+index.html                3D 版入口（加载规则引擎 + bb3d.min.js）
+classic.html              经典 2D 界面（上游 UI + 联机/中文化改动）
+three-src/
+  app.js                  大厅、对局界面、点选确认流程、原因判定、产业板
+  board3d.js              three.js 场景：版图、板块、连线、市场、高亮、镜头
+  net.js                  WebSocket 客户端（重连）
+  routes.js               生成的连线折线（勿手改）
+js/
+  gameData.js gameState.js gameLogic.js aiPlayer.js   规则引擎（前后端共用）
+  three/bb3d.min.js       3D 前端打包产物
+  online.js uiManager.js boardRenderer.js ...          经典 2D 版
+css/three.css             3D 版样式
+assets/
+  board.jpg               中文版图
+  cards/                  中文卡牌
+  tiles/<kind>-<n>.jpg    经典版板块
+  tiles/{purple,yellow,orange,teal}/   3D 版四色板块与船/火车
+server/
+  index.js                HTTP + WebSocket 房间服务器、持久化、AI 调度
+  engine.js               在 Node 中加载规则引擎
+scripts/
+  build-three.sh          esbuild 打包
+  trace-routes.py         沿印刷线路描连线
+  route-overrides.json    个别连线的人工路径点
+test/
+  online-test.js          联机整局（3 真人 + 1 AI）
+  sell-scenarios.js       销售/啤酒场景 + 全 AI 对局
+  three-play.mjs          双浏览器 3D 点击整局
+  three-mobile.mjs        手机触屏冒烟测试
+docs/images/              README 截图
+```
+
+## 本地运行
+
+需要 Node.js 18 及以上。
+
+```bash
+git clone -b three https://github.com/potatoyz/brass-birmingham.git
+cd brass-birmingham
+npm install
+npm start                 # 默认 http://0.0.0.0:28788
+# 打开 http://localhost:28788 进入 3D 版；/classic.html 为经典 2D 版
+```
+
+修改 `three-src/` 后需要重新打包：
+
+```bash
+npm run build:three       # 输出 js/three/bb3d.min.js
+```
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
 | `HOST` | `0.0.0.0` | 监听地址 |
-| `PORT` | `28788` | 网页与 WebSocket（`/ws`）共用的端口 |
+| `PORT` | `28788` | 网页与 WebSocket（`/ws`）共用端口 |
 | `DATA_DIR` | `./data` | 房间存档目录（`rooms.json`） |
 | `AI_DELAY_MS` | `1100` | AI 每步之间的延迟（毫秒） |
 
-健康检查：`GET /health`。
+URL 参数：`?room=CODE` 直接加入房间；`?low=1` 强制低配模式。健康检查：`GET /health`。
 
-### 部署（systemd 示例）
+重新描连线（仅当版图图片变化时）：先把连线和锚点数据导出为 `/tmp/geo.json`，然后运行 `python3 scripts/trace-routes.py`，会重新生成 `three-src/routes.js`。
+
+## 部署
+
+服务是单进程 Node，用 systemd 托管即可。下面是示例，用户名和路径请自行替换：
 
 ```ini
-# /etc/systemd/system/brass.service
 [Unit]
-Description=Brass Birmingham online server
+Description=Brass Birmingham 3D online
 After=network.target
 
 [Service]
-User=brass
-WorkingDirectory=/opt/brass/app
-Environment=HOST=0.0.0.0
-Environment=PORT=28788
-Environment=DATA_DIR=/var/lib/brass
+User=<服务用户>
+WorkingDirectory=/opt/<app>/app
+Environment=PORT=28789
+Environment=DATA_DIR=/var/lib/<app>
 ExecStart=/usr/bin/node server/index.js
 Restart=always
-RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/brass
+ReadWritePaths=/var/lib/<app>
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin brass
-sudo mkdir -p /opt/brass/app /var/lib/brass && sudo chown brass:brass /var/lib/brass
-# 把 index.html css js assets server package*.json 复制到 /opt/brass/app，然后：
-cd /opt/brass/app && sudo npm install --omit=dev
-sudo systemctl daemon-reload && sudo systemctl enable --now brass
-```
+把 `index.html classic.html css js assets server package*.json` 复制到应用目录，执行 `npm install --omit=dev`，再 `systemctl enable --now`。更新前建议先备份旧文件；服务重启后房间会从 `rooms.json` 恢复。服务只提供 HTTP/WS，需要 HTTPS 时请在前面加反向代理，并转发 `/ws` 的 WebSocket。别忘了在防火墙/安全组放行端口。
 
-记得在防火墙 / 云安全组放行该端口。更新时可先把旧目录改名为 `app.prev` 以便回滚。
-
-### 测试
+## 测试
 
 ```bash
-node test/online-test.js      # 起一个临时服务器：3 真人 + 1 AI 打完整局，检查隐藏手牌、同步、断线重连、重启恢复、非法操作、卖货啤酒选择与整批校验
-node test/sell-scenarios.js   # 手工构造的卖货场景 + 全 AI 对局；JS_DIR=<原版 js 目录> 可对比原版行为
+node test/online-test.js      # 起临时服务器：3 真人 + 1 AI 打完整局，检查隐藏手牌、同步、断线重连、重启恢复、非法操作、销售啤酒
+node test/sell-scenarios.js   # 手工构造的销售场景 + 15 局全 AI 对局
 ```
 
-`BASE_URL=http://host:port MODE=smoke node test/online-test.js` 可对已部署的服务器做冒烟测试。
+3D 端到端测试需要 `puppeteer-core` 和本机 Chrome（脚本里默认路径 `/usr/bin/google-chrome`，截图目录可在脚本开头修改）。先启动一个服务器，再运行：
 
-### 已知限制
-
-- 服务器只提供 HTTP / WS；需要 HTTPS 请自行在前面加反向代理（并转发 `/ws` 的 WebSocket）。
-- 知道房间号的人都能进入观战（看不到任何人的手牌）。
-- 手机上可以玩，但棋盘较小，主要按桌面浏览器设计。
-- 新增界面为中文，原版游戏界面文字仍为英文。
-
-**English summary:** this fork adds online multi-device rooms (4-letter room codes, lobby with AI seats, server-authoritative rules reusing the original engine, hidden hands, WebSocket sync with reconnect, JSON persistence, 7-day idle cleanup; hotseat mode kept) and fixes two upstream Sell bugs: beer can now be chosen per barrel (own brewery, connected opponent brewery, or the merchant's barrel), and multi-tile sales are validated as a whole batch up front — previously later tiles were silently skipped once beer ran out, sometimes after a merchant bonus had already been granted. Run with `npm install && npm start` (env `HOST`, `PORT`=28788, `DATA_DIR`=./data); tests: `node test/online-test.js`, `node test/sell-scenarios.js`.
-
----
-
-## Screenshots
-
-<p align="center">
-  <img src="screenshots/preview.gif" alt="Animated preview of setup, labeled hand cards, Canal and Rail Era boards, build choices, and scoring" width="100%">
-  <br><em>A quick look at setup, the labeled card hand, both eras, building, and scoring.</em>
-</p>
-
-<p align="center">
-  <img src="screenshots/canal_era.jpg" alt="Full Canal Era game board with placed industry tiles, canal links, cards, markets, and player panels" width="100%">
-  <br><em>Canal Era in play with the bundled board, cards, tile art, and resource cubes.</em>
-</p>
-
-<p align="center">
-  <img src="screenshots/rail_era.jpg" alt="Full Rail Era game board with rail links and higher-level industries" width="100%">
-  <br><em>Rail Era, with a wider network and higher-level industries.</em>
-</p>
-
-<p align="center">
-  <img src="assets/board.jpg" alt="Full Brass: Birmingham board artwork" width="58%">
-  <br><em>The printed board artwork used by the game.</em>
-</p>
-
----
-
-## The Game
-
-Compete as rival entrepreneurs in Birmingham and its surrounding towns. Establish canals and railways, develop industries, and outmaneuver your opponents across two distinct eras.
-
-**2-4 Players** · **Canal Era + Rail Era** · **Hotseat Multiplayer** · **Online Rooms (this fork)**
-
-### Two Eras of Industry
-
-**Canal Era (1770-1830)** — Build canals and establish your first industries. Only one tile per location. At the end, all canals and Level I tiles are removed — but Level II+ tiles carry over and score again.
-
-**Rail Era (1830-1870)** — Build railways (requiring coal), expand aggressively with multiple tiles per location, and push for the highest score.
-
----
-
-### Build Your Empire
-
-Choose from six industry types, each with a unique strategic role:
-
-| Industry | Role | Key Trait |
-|----------|------|-----------|
-| **Cotton Mills** | Sell goods for VP | Expensive but high-scoring |
-| **Coal Mines** | Fuel rail links and industries | Cheap, strong income |
-| **Iron Works** | Supply iron for building and development | Efficient, denies opponents |
-| **Manufacturers** | 8 unique levels with varied rewards | Versatile and complex |
-| **Potteries** | Massive VP potential (up to 20 VP) | High cost, requires planning |
-| **Breweries** | Supply beer for selling goods | The most important industry |
-
-Select what to build, where, and for how much — all costs including coal and iron sourcing are calculated automatically.
-
-![Build modal — choose an industry, see the cost breakdown](screenshots/build_modal.jpg)
-
-<p align="center"><em>Build action — choose from available industries at locations matching your cards</em></p>
-
-![Sell modal — choose a built industry and merchant beer](screenshots/sell_modal.jpg)
-
-<p align="center"><em>Sell action — check the goods, beer requirement, and merchant bonus before selling.</em></p>
-
----
-
-### Clear Action Workflow
-
-A persistent **action phase bar** guides you through each turn:
-
-1. **Choose Action** — Pick from Build, Network, Develop, Sell, Loan, Scout, or Pass
-2. **Select Target** — Choose what/where to build, which connection, etc.
-3. **Discard Card** — Valid cards glow gold; invalid cards are dimmed
-
-The phase bar shows your current step, contextual instructions, and a cancel button. Press **Escape** at any time to abort.
-
-When waiting for card selection, action buttons and your player mat dim to focus attention on your hand. Only valid discard options are clickable.
-
----
-
-### Game Log & Turn Transitions
-
-A **scrollable game log** in the right panel records every action: builds, network links, sales, loans, and more — color-coded by player. No more relying on fleeting toast notifications.
-
-Between turns, a **brief animated overlay** shows the next player's name in their color, giving a clear visual break.
-
-![Players panel, markets, and game log](screenshots/player_markets.jpg)
-
-<p align="center"><em>Right panel — player stats, markets with current prices, and the game log</em></p>
-
----
-
-### Develop to Unlock Higher Tiers
-
-Spend iron to remove low-level tiles from your player mat and access the powerful high-level industries underneath. Optionally develop two tiles at once.
-
-![Develop modal — remove tiles from your mat to unlock stronger ones](screenshots/develop_modal.jpg)
-
-<p align="center"><em>Develop action — skip past weak tiles to access Level III+ industries</em></p>
-
----
-
-### Your Hand, Your Strategy
-
-Play location cards to build anywhere on the map, or industry cards to build within your network. Manage your hand carefully — every action costs a card.
-
-Cards use the included printed faces, with inline SVG artwork as a fallback.
-
-![Hand, actions, and industry mat](screenshots/hand_actions.jpg)
-
-<p align="center"><em>Bottom panel — your hand of cards, the seven available actions, and your remaining industry tiles</em></p>
-
----
-
-### The Board
-
-The game includes the printed board artwork and also has an original, procedural
-night-time relief map as a fallback:
-
-- **Procedural terrain** — a hill-shaded elevation raster generated in-page, with an industrial haze over the Black Country basin
-- **Region washes** tinting each county, and warm furnace light pooling over every town
-- **Towns on slate plinths** with region-coloured name ribbons, as printed on the board
-- **Engraved industry art** — a spinning mill, pithead winding gear, blast furnace, sawtooth workshop, bottle kiln and cask, rather than abstract glyphs
-- **Canals** as cut waterways and **railways** as ballast with sleeper ties; rivers stay desaturated so they never read as buildable links
-- **A numbered 0–99 score track** running the perimeter of a brass frame
-
-Slots permitting two industries show both icons split on the diagonal.
-
----
-
-### Bundled Board Artwork
-
-The repository includes the board, industry chips, card faces, and player mat
-under `assets/`. The README gallery above shows the board art in play and as a
-full map.
-
-To use a different board image, replace `assets/board.jpg` locally or point the
-browser at another image:
-
-```js
-localStorage.brassBoardAsset = 'https://example.com/board.jpg'
+```bash
+PORT=28790 DATA_DIR=/tmp/bb-test npm start &              # 测试用服务器
+BASE=http://127.0.0.1:28790/ node test/three-play.mjs   # 两个浏览器只靠点击打完整局
+node test/three-mobile.mjs                              # 390×844 触屏视口（服务器地址写在脚本开头的 BASE）
 ```
 
-The matching chip, card and mat files are already included:
+## 更多截图
 
-```
-assets/board.jpg              the map
-assets/tiles/<kind>-<n>.jpg   industry chips, e.g. coal-1.jpg, iron-3-flipped.jpg
-assets/cards/<id>.jpg         card faces, keyed by city id or industry id
-assets/player-mat.jpg         the player mat
-```
+| | |
+|---|---|
+| ![4 人局全景](docs/images/3d-overview.jpg) | ![归属特写](docs/images/3d-ownership-closeup.jpg) |
+| ![对手产业板](docs/images/3d-player-board.jpg) | ![连线沿印刷线路](docs/images/3d-link-route-kidderminster.jpg) |
 
-The printed map carries the towns, routes and merchant buildings, and the game
-draws the changing state on top: placed chips, resource cubes, beer barrels and
-highlights. The locally bundled assets are tracked with the project; browser
-overrides and calibration remain in local storage.
+## 致谢与版权
 
-All 27 locations move to measured positions for a retail board, and each
-location's industry spaces are placed using the arrangement the board actually
-prints — Coalbrookdale one space over two, Birmingham two over two, and so on,
-rather than a single row. To adjust the alignment, open the page with
-`?calibrate=1`:
-
-| Input | Effect |
-|-------|--------|
-| drag a town / merchant / brewery | move it onto its printed space |
-| `c` | dump the finished layout as JSON to the console |
-| `r` | reset to the measured defaults |
-
-Positions are stored normalised, so one calibration holds for any image at any
-resolution, and is saved automatically as you drag.
-
-> Board artwork is normally the publisher's copyright. Supplying an image is
-> your call — use art you have the right to use.
-
-### Era Scoring
-
-At the end of each era, score VP from your flipped industry tiles and the links connecting them. Higher-level tiles placed in the Canal Era score in *both* eras.
-
-![Rail Era scoring results](screenshots/scoring.jpg)
-
-<p align="center"><em>Era scoring — link VP and industry VP tallied for each player</em></p>
-
----
-
-## How to Play
-
-### Quick Start
-
-```
-python3 -m http.server 8080
-```
-
-Open [http://localhost:8080](http://localhost:8080) in your browser. No build step or dependencies.
-
-1. Choose 2-4 players and enter names
-2. Click **Begin Game**
-
-![Game setup screen](screenshots/title.jpg)
-
-![The Canal Era board ready for the first turn](screenshots/board_start.jpg)
-
-### On Your Turn
-
-1. **Select an action** from the action panel (Build, Network, Develop, Sell, Loan, Scout, or Pass)
-2. **Follow the phase bar** — it shows your current step and what to do next
-3. **Choose your target** from the modal or board
-4. **Click a valid card** (highlighted with a gold pulse) to discard
-
-Disabled action buttons show **tooltips explaining why** they can't be used (e.g. "No iron available", "Need at least 3 cards").
-
-The game handles all resource sourcing (coal, iron, beer), market pricing, turn order, and scoring automatically.
-
-### Tips for New Players
-
-- **Build breweries early** — Beer is the most contested resource in the game
-- **Watch the turn order** — Spending less money means going first next round
-- **Develop to skip weak tiles** — Accessing Level III+ tiles is worth the iron cost
-- **Build in the Canal Era for double scoring** — Level II+ tiles persist into the Rail Era
-- **Don't ignore income** — It compounds every round and scores VP at the end
-
----
-
-## Rules Reference
-
-This implementation follows the official Brass: Birmingham rulebook:
-
-- **Coal** requires a connected source (mine or market via merchant link)
-- **Iron** can be taken from any iron works on the board — no connection needed
-- **Beer** for selling comes from your own breweries (anywhere), connected opponent breweries, or merchant barrels
-- **Overbuilding** your own tiles requires same type + higher level; opponent coal/iron tiles can only be overbuilt when that resource is globally depleted
-- **Pottery I and III** have the lightbulb icon and cannot be developed — they must be built
-- **Turn order** each round goes to whoever spent the least money
-
----
-
-## Architecture
-
-Pure HTML/CSS/JS — no build tools, no frameworks, no dependencies. Board and
-component artwork is bundled under `assets/`; procedural board art remains the
-fallback.
-
-| File | Purpose |
-|------|---------|
-| `index.html` | Layout: setup screen, game screen with phase bar, game log, overlays |
-| `css/style.css` | Dark Victorian theme with CSS animations, card-select mode, transitions |
-| `js/gameData.js` | All constants: tiles, cities, connections, cards, merchants, markets |
-| `js/gameState.js` | Game state, market mechanics, network pathfinding, turn management |
-| `js/gameLogic.js` | All 7 actions + `getDisabledReason()` for tooltip feedback |
-| `js/industryIcons.js` | Engraved industry illustrations shared by the board and hand cards |
-| `js/boardAssets.js` | Bundled board/component artwork + measured board layout |
-| `js/boardRenderer.js` | SVG board: procedural terrain, frame + score track, calibration mode |
-| `js/uiManager.js` | Phase bar, card selection mode, game log, turn transitions, modals |
-| `js/main.js` | Entry point, setup screen |
-| `js/online.js` | (fork) Online client: rooms, lobby, reconnect |
-| `css/online.css` | (fork) Styles for the online UI and beer picker |
-| `server/index.js` | (fork) Node HTTP + WebSocket room server, persistence |
-| `server/engine.js` | (fork) Loads the browser rules engine in Node, validates actions |
-| `test/` | (fork) Online end-to-end test and sell/beer scenarios |
-
----
-
-## Credits
-
-- **Brass: Birmingham** designed by Gavan Brown, Matt Tolman, and Martin Wallace
-- Published by [Roxley Games](https://roxley.com)
-- Tile data verified against the [Tabletop Simulator](https://github.com/ikegami/tts_brass) implementation by Kini/ikegami
-- Board geography and card data referenced from community implementations
-
----
-
-*Fan-made digital adaptation for personal and educational use. All game design credit belongs to the original designers and publisher.*
+- 《Brass: Birmingham（工业革命：伯明翰）》由 Gavan Brown、Matt Tolman、Martin Wallace 设计，[Roxley Games](https://roxley.com) 出版。游戏设计与全部美术（版图、卡牌、板块等）的版权归 Roxley Games 及相关作者所有。喜欢的话请购买实体版支持原作。
+- 基础代码来自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)，作者 Nissan Pow。
+- 四色板块与船/火车素材来自 Tabletop Simulator 模组 [ikegami/tts_brass](https://github.com/ikegami/tts_brass)，图片从该模组引用的 Steam CDN 地址下载。
+- 版图与卡牌的中文化版本，是在原美术基础上替换文字后制作的。
+- 本项目是非官方粉丝作品，仅供非商业的学习与交流，不得用于商业用途。
+- **代码许可**：上游仓库和本仓库目前都没有附带 LICENSE 文件，所以代码没有授予任何开源许可，版权归各自作者所有。如需复用，请先联系相应作者。
