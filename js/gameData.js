@@ -108,6 +108,18 @@ function isSellableIndustry(type) {
            type === INDUSTRY_TYPES.POTTERY;
 }
 
+// Helper: 计算产业建成时产出的资源数量（煤/铁立方数或啤酒桶数）
+// 官方规则：酒厂无论等级，在运河时代建成时放 1 桶啤酒，在铁路时代建成时放 2 桶；
+// 其它产业产出板块标明的数量（tileData.resourceCubes）。
+// era 参数缺省（undefined/null）时，对酒厂返回 null（以便调用方区分并展示“运河 1 / 铁路 2 桶啤酒”等时代差异），其它产业仍返回 tileData.resourceCubes || 0。
+function producedCubes(type, tileData, era) {
+    if (type === INDUSTRY_TYPES.BREWERY) {
+        if (!era) return null;
+        return era === ERA.RAIL ? 2 : 1;
+    }
+    return (tileData && tileData.resourceCubes) || 0;
+}
+
 // Industry type display info
 const INDUSTRY_DISPLAY = {
     [INDUSTRY_TYPES.COTTON_MILL]:  { name: '棉纺厂',  icon: '🏭', color: '#e8d5b7', shortName: '棉纺' },

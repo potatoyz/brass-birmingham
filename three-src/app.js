@@ -49,14 +49,20 @@ function toast(text, type = 'info') {
 const ROMAN = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ'];
 const costLine = td => `£${td.cost}${td.costCoal ? ` <span class="rc coal">煤${td.costCoal}</span>` : ''}${td.costIron ? ` <span class="rc iron">铁${td.costIron}</span>` : ''}${td.beersToSell ? ` <span class="rc beer">售需啤酒${td.beersToSell}</span>` : ''}`;
 const gainLine = td => `${td.vp} 分 · 收入 +${td.income} · 连线 ${td.linkVP}`;
-function tileInfo(td, type) {
+function tileInfo(td, type, era) {
     const parts = [`费用 £${td.cost}`];
     if (td.costCoal) parts.push(`煤 ${td.costCoal}`);
     if (td.costIron) parts.push(`铁 ${td.costIron}`);
     if (td.beersToSell) parts.push(`销售需啤酒 ${td.beersToSell}`);
-    const res = td.resourceCubes ? `，产出 ${td.resourceCubes} ${type === 'brewery' ? '桶啤酒' : type === 'coalMine' ? '煤' : '铁'}` : '';
-    const era = td.canalEra && td.railEra ? '两个时代' : td.canalEra ? '仅运河时代' : '仅铁路时代';
-    return `${parts.join(' · ')}${res}\n翻面得 ${td.vp} 分、收入 +${td.income}，连线分 ${td.linkVP} · ${era}${td.canDevelop ? '' : ' · 不可发展'}`;
+    let res = '';
+    if (type === 'brewery' || (typeof INDUSTRY_TYPES !== 'undefined' && type === INDUSTRY_TYPES.BREWERY)) {
+        const n = typeof producedCubes === 'function' ? producedCubes(type, td, era) : (era === 'rail' ? 2 : era === 'canal' ? 1 : null);
+        res = `，产出 ${n != null ? n : '运河 1 / 铁路 2'} 桶啤酒`;
+    } else if (td.resourceCubes) {
+        res = `，产出 ${td.resourceCubes} ${type === 'coalMine' ? '煤' : '铁'}`;
+    }
+    const eraText = td.canalEra && td.railEra ? '两个时代' : td.canalEra ? '仅运河时代' : '仅铁路时代';
+    return `${parts.join(' · ')}${res}\n翻面得 ${td.vp} 分、收入 +${td.income}，连线分 ${td.linkVP} · ${eraText}${td.canDevelop ? '' : ' · 不可发展'}`;
 }
 
 // ==========================================================================
@@ -477,7 +483,7 @@ class App {
             const chosen = this.ix.dev.filter(x => x === type).length;
             const cls = (devTypes.has(type) ? ' can' : '') + (chosen ? ' chosen' : '') + (td.canDevelop ? '' : ' nodev');
             const cost = `<span>£${td.cost}</span>${td.costCoal ? `<span class="rq">${ic('coal')}${td.costCoal}</span>` : ''}${td.costIron ? `<span class="rq">${ic('iron')}${td.costIron}</span>` : ''}${td.beersToSell ? `<span class="rq">${ic('beer')}${td.beersToSell}</span>` : ''}`;
-            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level, false, this.me)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type) + '\n剩余：' + this.levelGroups(this.me, type).map(x => `${ROMAN[x.level]}×${x.left}`).join(' '))}">
+            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level, false, this.me)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type, this.state ? this.state.era : null) + '\n剩余：' + this.levelGroups(this.me, type).map(x => `${ROMAN[x.level]}×${x.left}`).join(' '))}">
               <div class="mimgw"><img class="mimg" src="${tileImg(type, td.level, false, this.me)}" alt="${indName(type)}"><b class="mlv">${ROMAN[td.level]}</b><b class="mcnt">×${r.count}</b>${chosen ? `<b class="badge">${chosen > 1 ? '×2' : '✓'}</b>` : ''}</div>
               <div class="mcost">${cost}</div></div>`;
         }).join('');
@@ -502,7 +508,7 @@ class App {
             const gs = this.levelGroups(pid, type), next = gs.find(x => x.left);
             return `<div class="brow"><div class="bname">${indName(type)}<span class="muted">剩 ${gs.reduce((a, x) => a + x.left, 0)}</span></div><div class="blv">${gs.map(x => {
                 const td = x.td, era = td.canalEra && td.railEra ? '' : td.canalEra ? '<span class="era">仅运河</span>' : '<span class="era">仅铁路</span>';
-                return `<div class="bt${x.left ? '' : ' out'}${x === next ? ' next' : ''}" data-preview="tile" data-img="${tileImg(type, x.level, false, pid)}" data-cap="${indName(type)} ${x.level} 级（剩 ${x.left}/${x.total}）" data-info="${esc(tileInfo(td, type))}">
+                return `<div class="bt${x.left ? '' : ' out'}${x === next ? ' next' : ''}" data-preview="tile" data-img="${tileImg(type, x.level, false, pid)}" data-cap="${indName(type)} ${x.level} 级（剩 ${x.left}/${x.total}）" data-info="${esc(tileInfo(td, type, this.state ? this.state.era : null))}">
                   <div class="bimg"><img src="${tileImg(type, x.level, false, pid)}" alt=""><b class="bcnt">×${x.left}<small>/${x.total}</small></b>${x === next ? '<b class="bnext">下一块</b>' : ''}</div>
                   <div class="bc">${costLine(td)}</div><div class="bg">${td.vp} 分 · +${td.income}</div><div class="bg">连线 ${td.linkVP}${td.canDevelop ? '' : ' · <span class="warn">不可发展</span>'}</div>${era}</div>`;
             }).join('')}</div></div>`;
@@ -1167,7 +1173,7 @@ class App {
         const t = hit.tile, p = this.state.players[t.playerId], td = t.tileData;
         const [cid] = this.splitKey(hit.slotKey);
         this.showPreview({ img: tileImg(t.type, td.level, t.flipped, t.playerId), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
-            info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}\n${tileInfo(td, t.type)}` }, null, 2500);
+            info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}\n${tileInfo(td, t.type, null)}` }, null, 2500);
     }
 
     // ---------------------------------------------------------------- hover / preview
@@ -1178,7 +1184,7 @@ class App {
             const [cid] = this.splitKey(hit.slotKey);
             this.hideTip();
             this.showPreview({ img: tileImg(t.type, td.level, t.flipped, t.playerId), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
-                info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}${hit.active ? '\n点击选择' : ''}\n${tileInfo(td, t.type)}` }, { x: e.clientX, y: e.clientY });
+                info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}${hit.active ? '\n点击选择' : ''}\n${tileInfo(td, t.type, null)}` }, { x: e.clientX, y: e.clientY });
             return;
         }
         this.hidePreview();

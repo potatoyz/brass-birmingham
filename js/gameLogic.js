@@ -271,10 +271,7 @@ class GameLogic {
 
         // Breweries produce 1 beer when built in the Canal Era, 2 in the Rail
         // Era; coal mines / iron works use the cube count printed on the tile.
-        let cubes = tileData.resourceCubes || 0;
-        if (industryType === INDUSTRY_TYPES.BREWERY) {
-            cubes = this.state.era === ERA.RAIL ? 2 : 1;
-        }
+        let cubes = producedCubes(industryType, tileData, this.state.era);
 
         const placedTile = {
             playerId,
