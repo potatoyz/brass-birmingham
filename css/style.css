@@ -61,7 +61,7 @@
 }
 
 body {
-    font-family: 'Source Sans Pro', 'Segoe UI', sans-serif;
+    font-family: 'Source Sans Pro', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     background: var(--bg-dark);
     color: var(--text-primary);
     overflow: hidden;
@@ -70,7 +70,7 @@ body {
 }
 
 h1, h2, h3 {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-weight: 600;
     text-shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
@@ -166,7 +166,7 @@ h1, h2, h3 {
 
 .game-tagline {
     color: var(--text-muted);
-    font-family: 'Crimson Text', serif;
+    font-family: 'Crimson Text', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-style: italic;
     font-size: 16px;
     margin-bottom: 40px;
@@ -182,7 +182,7 @@ h1, h2, h3 {
 
 .form-group label {
     display: block;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 14px;
     color: var(--text-secondary);
     margin-bottom: 10px;
@@ -198,7 +198,7 @@ h1, h2, h3 {
 .count-btn {
     flex: 1;
     padding: 14px;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 24px;
     background: var(--bg-light);
     color: var(--text-secondary);
@@ -243,7 +243,7 @@ h1, h2, h3 {
 .player-name-input input[type="text"] {
     flex: 1;
     padding: 10px 14px;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     font-size: 16px;
     background: var(--bg-dark);
     color: var(--text-primary);
@@ -261,7 +261,7 @@ h1, h2, h3 {
     display: flex;
     align-items: center;
     gap: 4px;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     font-size: 13px;
     color: var(--text-secondary);
     cursor: pointer;
@@ -279,7 +279,7 @@ h1, h2, h3 {
 .player-name-input .ai-difficulty-select {
     flex-shrink: 0;
     padding: 8px 10px;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     font-size: 13px;
     background: var(--bg-dark);
     color: var(--text-primary);
@@ -298,7 +298,7 @@ h1, h2, h3 {
     display: block;
     width: 100%;
     padding: 16px;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 18px;
     font-weight: 600;
     letter-spacing: 3px;
@@ -346,7 +346,7 @@ h1, h2, h3 {
 }
 
 #era-label {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 16px;
     color: var(--accent-gold);
     letter-spacing: 2px;
@@ -478,7 +478,7 @@ h1, h2, h3 {
 }
 
 .phase-step-label {
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     letter-spacing: 0.5px;
 }
 
@@ -499,7 +499,7 @@ h1, h2, h3 {
 .phase-cancel-btn {
     padding: 3px 12px;
     font-size: 11px;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     background: none;
     border: 1px solid var(--border-dark);
     border-radius: 3px;
@@ -634,7 +634,7 @@ h1, h2, h3 {
 }
 
 .player-panel-name {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.5px;
@@ -642,7 +642,7 @@ h1, h2, h3 {
 
 .ai-chip {
     display: inline-block;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -822,7 +822,7 @@ h1, h2, h3 {
 
 .log-entry.log-era {
     color: var(--accent-gold);
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 12px;
     text-align: center;
     padding: 6px;
@@ -878,7 +878,7 @@ h1, h2, h3 {
 }
 
 .turn-transition-name {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 48px;
     font-weight: 700;
     letter-spacing: 6px;
@@ -886,7 +886,7 @@ h1, h2, h3 {
 }
 
 .turn-transition-subtitle {
-    font-family: 'Crimson Text', serif;
+    font-family: 'Crimson Text', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 20px;
     color: var(--text-secondary);
     font-style: italic;
@@ -951,7 +951,7 @@ h1, h2, h3 {
     text-transform: uppercase;
     letter-spacing: 2px;
     margin-bottom: 6px;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
 }
 
 #player-hand {
@@ -1054,7 +1054,7 @@ h1, h2, h3 {
 }
 
 .card-name {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 11px;
     font-weight: 700;
     color: var(--ink);
@@ -1176,7 +1176,7 @@ h1, h2, h3 {
     border-radius: 4px;
     color: var(--text-secondary);
     cursor: pointer;
-    font-family: 'Source Sans Pro', sans-serif;
+    font-family: 'Source Sans Pro', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -1369,7 +1369,7 @@ h1, h2, h3 {
 }
 
 .city-label {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-weight: 700;
     letter-spacing: 0.7px;
     fill: #fdf4e0;
@@ -1442,7 +1442,7 @@ h1, h2, h3 {
 }
 
 .merchant-label {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-weight: 700;
     letter-spacing: 0.6px;
     fill: #e9dcbb;
@@ -1576,7 +1576,7 @@ h1, h2, h3 {
 /* Modal buttons */
 .modal-btn {
     padding: 8px 20px;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 13px;
     border-radius: 4px;
     cursor: pointer;
@@ -1797,7 +1797,7 @@ h1, h2, h3 {
 }
 
 .tooltip-title {
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-weight: 600;
     margin-bottom: 4px;
     color: var(--accent-gold);
@@ -1863,7 +1863,7 @@ h1, h2, h3 {
     border-radius: 3px;
     background: rgba(24, 20, 14, 0.9);
     color: #f4e7c9;
-    font-family: 'Cinzel', serif;
+    font-family: 'Cinzel', 'Noto Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', serif;
     font-size: 8px;
     font-weight: 700;
     line-height: 1.15;

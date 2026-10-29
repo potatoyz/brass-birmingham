@@ -205,8 +205,8 @@ function startGame(room) {
     room.pendingBonus = null;
     room.event = null;
     addLog(room, null, `游戏开始：${n} 名玩家`, 'system');
-    addLog(room, null, 'Canal Era', 'era');
-    addLog(room, null, `${room.game.currentPlayer.name}'s turn`, 'system');
+    addLog(room, null, '运河时代', 'era');
+    addLog(room, null, `轮到 ${room.game.currentPlayer.name}`, 'system');
 }
 
 function advance(room, prevPid) {
@@ -215,18 +215,18 @@ function advance(room, prevPid) {
     for (const ev of s.lastRoundEvents || []) addLog(room, ev.playerId, ev.message);
     s.lastRoundEvents = [];
     if (tr === 'endCanalEra') {
-        addLog(room, null, 'Canal Era Scoring', 'era');
+        addLog(room, null, '运河时代计分', 'era');
         const scores = s.endCanalEra();
-        addLog(room, null, 'Rail Era', 'era');
-        room.event = { id: ++room.eventSeq, kind: 'scoring', title: 'Canal Era Complete', scores };
-        addLog(room, null, `${s.currentPlayer.name}'s turn`, 'system');
+        addLog(room, null, '铁路时代', 'era');
+        room.event = { id: ++room.eventSeq, kind: 'scoring', title: '运河时代结束', scores };
+        addLog(room, null, `轮到 ${s.currentPlayer.name}`, 'system');
     } else if (tr === 'endGame') {
-        addLog(room, null, 'Final Scoring', 'era');
+        addLog(room, null, '最终计分', 'era');
         const scores = s.endGame();
         room.status = 'ended';
         room.event = { id: ++room.eventSeq, kind: 'gameover', scores };
     } else if (s.currentPlayerId !== prevPid) {
-        addLog(room, null, `${s.currentPlayer.name}'s turn`, 'system');
+        addLog(room, null, `轮到 ${s.currentPlayer.name}`, 'system');
     }
 }
 
@@ -271,7 +271,7 @@ function aiStep(room) {
     if (room.pendingBonus) {
         const pid = room.pendingBonus.playerId;
         const removed = s.players[pid].isAI ? new E.GameLogic(s).applyFreeDevelop(pid, room.pendingBonus.count) : [];
-        if (removed.length) addLog(room, pid, `used merchant bonus: developed ${removed.join(', ')}`);
+        if (removed.length) addLog(room, pid, `使用商人奖励：免费发展 ${removed.join('、')}`);
         return finishBonus(room);
     }
     const pid = s.currentPlayerId;
@@ -471,7 +471,7 @@ function handle(ws, msg) {
             } else {
                 const removed = E.applyFreeDevelop(room.game, mySeat, msg.type);
                 if (!removed) return err(ws, '无效选择');
-                addLog(room, mySeat, `used merchant bonus: developed ${removed}`);
+                addLog(room, mySeat, `使用商人奖励：免费发展 ${removed}`);
                 pb.count--;
                 if (pb.count <= 0 || E.developableTypes(room.game, mySeat).length === 0) finishBonus(room);
             }

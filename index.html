@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:,">
-    <title>Brass: Birmingham · 工业革命：伯明翰（联机版）</title>
-    <link rel="stylesheet" href="css/style.css?v=6">
+    <title>工业革命：伯明翰（联机版）</title>
+    <link rel="stylesheet" href="css/style.css?v=7">
     <link rel="stylesheet" href="css/online.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 </head>
@@ -13,9 +13,9 @@
     <!-- Setup Screen -->
     <div id="setup-screen" class="screen active">
         <div class="setup-container">
-            <h1 class="game-title">Brass</h1>
-            <h2 class="game-subtitle">Birmingham</h2>
-            <p class="game-tagline">An Economic Strategy Game &middot; 1770&ndash;1870</p>
+            <h1 class="game-title">工业革命</h1>
+            <h2 class="game-subtitle">伯明翰</h2>
+            <p class="game-tagline">经济策略游戏 &middot; 1770&ndash;1870</p>
 
             <!-- Online play (rooms) -->
             <div class="online-panel" id="online-panel">
@@ -33,7 +33,7 @@
             <summary>本机同屏模式（一台设备轮流玩）</summary>
             <div class="setup-form">
                 <div class="form-group">
-                    <label>Number of Players</label>
+                    <label>玩家人数</label>
                     <div class="player-count-selector">
                         <button class="count-btn" data-count="2">2</button>
                         <button class="count-btn active" data-count="3">3</button>
@@ -42,11 +42,11 @@
                 </div>
 
                 <div id="player-names" class="form-group">
-                    <label>Player Names</label>
+                    <label>玩家名称</label>
                     <div class="player-name-inputs"></div>
                 </div>
 
-                <button id="start-game-btn" class="btn-primary">Begin Game</button>
+                <button id="start-game-btn" class="btn-primary">开始游戏</button>
             </div>
             </details>
         </div>
@@ -81,8 +81,8 @@
         <!-- Top Bar -->
         <div id="top-bar">
             <div class="era-indicator">
-                <span id="era-label">Canal Era</span>
-                <span id="round-label">Round 1</span>
+                <span id="era-label">运河时代</span>
+                <span id="round-label">第 1 轮</span>
             </div>
             <div class="turn-info">
                 <span id="current-player-label"></span>
@@ -98,11 +98,11 @@
             <div class="market-summary">
                 <div class="market-item" id="coal-market-summary">
                     <span class="market-icon coal-icon"></span>
-                    <span>Coal: <span id="coal-price">£1</span></span>
+                    <span>煤炭：<span id="coal-price">£1</span></span>
                 </div>
                 <div class="market-item" id="iron-market-summary">
                     <span class="market-icon iron-icon"></span>
-                    <span>Iron: <span id="iron-price">£1</span></span>
+                    <span>铁：<span id="iron-price">£1</span></span>
                 </div>
             </div>
         </div>
@@ -112,21 +112,21 @@
             <div class="phase-steps">
                 <div class="phase-step" data-step="1">
                     <span class="phase-step-num">1</span>
-                    <span class="phase-step-label">Choose Action</span>
+                    <span class="phase-step-label">选择行动</span>
                 </div>
                 <div class="phase-step-arrow">&#9654;</div>
                 <div class="phase-step" data-step="2">
                     <span class="phase-step-num">2</span>
-                    <span class="phase-step-label">Select Target</span>
+                    <span class="phase-step-label">选择目标</span>
                 </div>
                 <div class="phase-step-arrow">&#9654;</div>
                 <div class="phase-step" data-step="3">
                     <span class="phase-step-num">3</span>
-                    <span class="phase-step-label">Discard Card</span>
+                    <span class="phase-step-label">弃牌</span>
                 </div>
             </div>
-            <div class="phase-instruction" id="phase-instruction">Select an action to begin</div>
-            <button class="phase-cancel-btn" id="phase-cancel-btn">Cancel</button>
+            <div class="phase-instruction" id="phase-instruction">请选择一个行动</div>
+            <button class="phase-cancel-btn" id="phase-cancel-btn">取消</button>
         </div>
 
         <!-- Main Game Area -->
@@ -145,17 +145,17 @@
 
                 <!-- Markets -->
                 <div id="markets-panel">
-                    <h3>Markets</h3>
+                    <h3>市场</h3>
                     <div id="coal-market" class="market">
                         <div class="market-header">
-                            <div class="market-label">Coal</div>
+                            <div class="market-label">煤炭</div>
                             <div class="market-current-price" id="coal-current-price"></div>
                         </div>
                         <div class="market-track" id="coal-track"></div>
                     </div>
                     <div id="iron-market" class="market">
                         <div class="market-header">
-                            <div class="market-label">Iron</div>
+                            <div class="market-label">铁</div>
                             <div class="market-current-price" id="iron-current-price"></div>
                         </div>
                         <div class="market-track" id="iron-track"></div>
@@ -164,7 +164,7 @@
 
                 <!-- Game Log -->
                 <div id="game-log-panel">
-                    <h3>Game Log</h3>
+                    <h3>游戏日志</h3>
                     <div id="game-log"></div>
                 </div>
             </div>
@@ -173,45 +173,45 @@
         <!-- Bottom Panel - Player Hand & Actions -->
         <div id="bottom-panel">
             <div id="hand-container">
-                <div class="hand-label" id="hand-label">Your Hand</div>
+                <div class="hand-label" id="hand-label">你的手牌</div>
                 <div id="player-hand"></div>
             </div>
             <div id="action-panel">
-                <div class="action-label">Actions</div>
+                <div class="action-label">行动</div>
                 <div id="action-buttons">
-                    <button class="action-btn action-build" data-action="build" title="Build an industry tile">
+                    <button class="action-btn action-build" data-action="build" title="建造一个产业板块">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Build</span>
+                        <span class="action-label-text">建造</span>
                     </button>
-                    <button class="action-btn action-network" data-action="network" title="Build a canal or rail link">
+                    <button class="action-btn action-network" data-action="network" title="建造运河或铁路">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Network</span>
+                        <span class="action-label-text">建网</span>
                     </button>
-                    <button class="action-btn action-develop" data-action="develop" title="Remove lower-level tiles">
+                    <button class="action-btn action-develop" data-action="develop" title="移除低等级板块">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Develop</span>
+                        <span class="action-label-text">发展</span>
                     </button>
-                    <button class="action-btn action-sell" data-action="sell" title="Sell cotton, goods, or pottery">
+                    <button class="action-btn action-sell" data-action="sell" title="出售棉花、商品或陶瓷">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Sell</span>
+                        <span class="action-label-text">销售</span>
                     </button>
-                    <button class="action-btn action-loan" data-action="loan" title="Take a £30 loan">
+                    <button class="action-btn action-loan" data-action="loan" title="贷款 £30">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Loan</span>
+                        <span class="action-label-text">贷款</span>
                     </button>
-                    <button class="action-btn action-scout" data-action="scout" title="Trade 3 cards for 2 wild cards">
+                    <button class="action-btn action-scout" data-action="scout" title="弃 3 张牌换 2 张万能牌">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Scout</span>
+                        <span class="action-label-text">侦察</span>
                     </button>
-                    <button class="action-btn action-pass pass-btn" data-action="pass" title="Pass (discard a card)">
+                    <button class="action-btn action-pass pass-btn" data-action="pass" title="跳过（弃一张牌）">
                         <span class="action-pip"></span>
-                        <span class="action-label-text">Pass</span>
+                        <span class="action-label-text">跳过</span>
                     </button>
                 </div>
             </div>
             <!-- Player Mat (industry tiles remaining) -->
             <div id="player-mat-container">
-                <div class="mat-label" id="mat-label">Your Industries</div>
+                <div class="mat-label" id="mat-label">你的产业板块</div>
                 <div id="player-mat"></div>
             </div>
         </div>
@@ -235,18 +235,18 @@
     <!-- Scoring Overlay -->
     <div id="scoring-overlay" class="hidden">
         <div class="scoring-content">
-            <h2 id="scoring-title">Era Scoring</h2>
+            <h2 id="scoring-title">时代计分</h2>
             <div id="scoring-details"></div>
-            <button id="scoring-continue-btn" class="btn-primary">Continue</button>
+            <button id="scoring-continue-btn" class="btn-primary">继续</button>
         </div>
     </div>
 
     <!-- Game Over Overlay -->
     <div id="gameover-overlay" class="hidden">
         <div class="gameover-content">
-            <h1>Game Over</h1>
+            <h1>游戏结束</h1>
             <div id="final-scores"></div>
-            <button id="new-game-btn" class="btn-primary">New Game</button>
+            <button id="new-game-btn" class="btn-primary">新游戏</button>
         </div>
     </div>
 
@@ -254,21 +254,21 @@
     <div id="turn-transition" class="hidden">
         <div class="turn-transition-content">
             <div class="turn-transition-name" id="turn-transition-name"></div>
-            <div class="turn-transition-subtitle">Your Turn</div>
+            <div class="turn-transition-subtitle">你的回合</div>
         </div>
     </div>
 
     <!-- Scripts -->
-    <script src="js/gameData.js?v=3"></script>
+    <script src="js/gameData.js?v=4"></script>
     <script src="js/industryIcons.js?v=3"></script>
-    <script src="js/gameState.js?v=3"></script>
-    <script src="js/gameLogic.js?v=4"></script>
+    <script src="js/gameState.js?v=4"></script>
+    <script src="js/gameLogic.js?v=5"></script>
     <script src="js/aiPlayer.js?v=4"></script>
     <script src="js/actionIcons.js?v=3"></script>
     <script src="js/boardAssets.js?v=3"></script>
-    <script src="js/boardRenderer.js?v=3"></script>
-    <script src="js/uiManager.js?v=5"></script>
+    <script src="js/boardRenderer.js?v=4"></script>
+    <script src="js/uiManager.js?v=6"></script>
     <script src="js/online.js?v=1"></script>
-    <script src="js/main.js?v=4"></script>
+    <script src="js/main.js?v=5"></script>
 </body>
 </html>

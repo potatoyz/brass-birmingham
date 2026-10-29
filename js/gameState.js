@@ -156,7 +156,7 @@ class GameState {
             deck.push({
                 type: CARD_TYPES.INDUSTRY,
                 industryTypes: [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.MANUFACTURER],
-                name: 'Cotton Mill / Manufacturer',
+                name: '棉纺厂 / 制造厂',
             });
         }
 
@@ -713,7 +713,7 @@ class GameState {
             this.lastRoundEvents.push({
                 type: 'shortfall-sale',
                 playerId: player.id,
-                message: `sold ${INDUSTRY_DISPLAY[cand.tile.type].name} Lv${cand.tile.tileData.level} for £${refund} to cover income shortfall`,
+                message: `出售 ${INDUSTRY_DISPLAY[cand.tile.type].name} Lv${cand.tile.tileData.level}，得 £${refund} 用于弥补收入不足`,
             });
         }
 
@@ -725,7 +725,7 @@ class GameState {
             this.lastRoundEvents.push({
                 type: 'shortfall-vp',
                 playerId: player.id,
-                message: `could not pay income shortfall — lost ${vpLoss} VP`,
+                message: `无法支付收入欠款，扣 ${vpLoss} 分`,
             });
         }
     }

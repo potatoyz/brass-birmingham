@@ -4,6 +4,45 @@
 // ============================================================================
 
 class UIManager {
+    // Older rooms saved their log lines in English; show them in Chinese.
+    static trLog(msg) {
+        if (typeof msg !== 'string' || !/[A-Za-z]{3}/.test(msg)) return msg;
+        const exact = {
+            'Canal Era': '运河时代', 'Rail Era': '铁路时代', 'Canal Era Scoring': '运河时代计分',
+            'Final Scoring': '最终计分', 'Canal Era Complete': '运河时代结束', 'Era Scoring': '时代计分',
+            'passed': '跳过', 'scouted (gained wild cards)': '侦察（获得万能牌）',
+        };
+        if (exact[msg]) return exact[msg];
+        let m;
+        if ((m = msg.match(/^(.*)'s turn$/i))) return `轮到 ${m[1]}`;
+        if ((m = msg.match(/^Game started with (\d+) players$/))) return `游戏开始：${m[1]} 名玩家`;
+        if ((m = msg.match(/^took £(\d+) loan$/))) return `贷款 £${m[1]}`;
+        let out = msg;
+        if ((m = out.match(/^built (.+?) in (.+?)( — .*| \(tile flipped!\))?$/i)) && !/link/.test(out)) out = `在${m[2]}建造了 ${m[1]}${m[3] || ''}`;
+        out = out.replace(/\[(.*)\]/, '【$1】').replace(/; /g, '；')
+            .replace(/(\S+(?: \d+)?)'s brewery, /gi, '$1 的酿酒厂 · ')
+            .replace(/([a-z-]+) merchant beer \(([^)]*)\)/gi, '商人啤酒 · $1（奖励 $2）')
+            .replace(/\+(\d+) income spaces/gi, '收入 +$1 格').replace(/\+(\d+) income/gi, '收入 +$1')
+            .replace(/\+(\d+) vp/gi, '+$1 分').replace(/free develop earned/gi, '获得免费发展')
+            .replace(/free develop:? ?/gi, '免费发展 ').replace(/\bbeer: /gi, '啤酒：')
+            .replace(/ \(tile flipped!\)/gi, '（板块已翻面！）')
+            .replace(/ — sold (\d+) to market for £(\d+)/gi, '，向市场卖出 $1 个得 £$2')
+            .replace(/\(1 beer consumed\)/gi, '（消耗 1 桶啤酒）')
+            .replace(/ to cover income shortfall/gi, ' 用于弥补收入不足').replace(/ for £(\d+)/gi, '，得 £$1')
+            .replace(/^could not pay income shortfall — lost (\d+) vp/i, '无法支付收入欠款，扣 $1 分');
+        for (const [en, zh] of UIManager.LOG_NAMES) {
+            out = out.replace(new RegExp(en.replace(/[()]/g, '\\$&'), 'gi'), zh);
+        }
+        out = out.replace(/ and /gi, ' 和 ').replace(/\(([^()]*)\)/g, '（$1）').replace(/, /g, '，')
+            .replace(/\blv(\d)/gi, 'Lv$1').replace(/\blevel (\d)/gi, 'Lv$1')
+            .replace(/ +([（【])/g, '$1').replace(/ +([）】])/g, '$1');
+        out = out.replace(/^built (canal|rail) link: /i, (_, t) => `建造了${t.toLowerCase() === 'canal' ? '运河' : '铁路'}：`)
+            .replace(/^built 2 rail links: /i, '建造了 2 条铁路：')
+            .replace(/^developed /i, '发展了 ').replace(/^sold /i, '出售了 ')
+            .replace(/^used merchant bonus: developed /i, '使用商人奖励：免费发展 ')
+            ;
+        return out;
+    }
     constructor() {
         this.state = null;
         this.logic = null;
@@ -130,8 +169,8 @@ class UIManager {
         this.renderer = boardRenderer;
 
         this.bindEvents();
-        this.addLogEntry(null, `Game started with ${this.state.numPlayers} players`, 'system');
-        this.addLogEntry(null, `Canal Era`, 'era');
+        this.addLogEntry(null, `游戏开始：${this.state.numPlayers} 名玩家`, 'system');
+        this.addLogEntry(null, '运河时代', 'era');
         this.previousPlayerId = this.state.currentPlayerId;
         this.refresh();
         this.runAITurnLoop(); // in case the first seat is AI-controlled
@@ -202,26 +241,26 @@ class UIManager {
     updateTopBar() {
         const player = this.state.currentPlayer;
         document.getElementById('era-label').textContent =
-            this.state.era === ERA.CANAL ? 'Canal Era' : 'Rail Era';
+            this.state.era === ERA.CANAL ? '运河时代' : '铁路时代';
         document.getElementById('round-label').textContent =
-            `Round ${this.state.round} | Deck: ${this.state.drawDeck.length}`;
+            `第 ${this.state.round} 轮 | 牌堆：${this.state.drawDeck.length}`;
 
         const playerLabel = document.getElementById('current-player-label');
-        playerLabel.textContent = `${player.name}'s Turn`;
+        playerLabel.textContent = `${player.name} 的回合`;
         playerLabel.style.backgroundColor = player.color;
         playerLabel.style.color = player.colorName === 'White' ? '#1a1510' : 'white';
 
         const actionsLeft = this.state.actionsPerTurn - this.state.actionsThisTurn;
         document.getElementById('actions-remaining-label').textContent =
-            `${actionsLeft} action${actionsLeft !== 1 ? 's' : ''} left`;
+            `剩余 ${actionsLeft} 个行动`;
 
         // Market prices
         const coalPrice = this.state.getCoalPrice();
         const ironPrice = this.state.getIronPrice();
         document.getElementById('coal-price').textContent =
-            coalPrice === Infinity ? 'Empty' : `£${coalPrice}`;
+            coalPrice === Infinity ? '售罄' : `£${coalPrice}`;
         document.getElementById('iron-price').textContent =
-            ironPrice === Infinity ? 'Empty' : `£${ironPrice}`;
+            ironPrice === Infinity ? '售罄' : `£${ironPrice}`;
     }
 
     updatePlayerPanels() {
@@ -238,14 +277,14 @@ class UIManager {
             panel.innerHTML = `
                 <div class="player-panel-header">
                     <span class="player-panel-name" style="color: ${player.color}">${player.name}${player.isAI ? ' <span class="ai-chip">AI</span>' : ''}</span>
-                    <span class="player-panel-vp">${player.vp} <span style="font-size:10px;font-weight:400;color:var(--text-muted)">VP</span></span>
+                    <span class="player-panel-vp">${player.vp} <span style="font-size:10px;font-weight:400;color:var(--text-muted)">分</span></span>
                 </div>
                 <div class="player-panel-stats">
-                    <span class="player-panel-stat" title="Money" style="color:#c9a84c">£${player.money}</span>
-                    <span class="player-panel-stat" title="Income level">&#8679; ${this.state.getIncomeLevel(player.id)}</span>
-                    <span class="player-panel-stat" title="Cards">${player.hand.length} cds</span>
-                    <span class="player-panel-stat" title="Links">
-                        ${this.state.era === ERA.CANAL ? player.linksRemaining.canal : player.linksRemaining.rail} lnk
+                    <span class="player-panel-stat" title="资金" style="color:#c9a84c">£${player.money}</span>
+                    <span class="player-panel-stat" title="收入等级">&#8679; ${this.state.getIncomeLevel(player.id)}</span>
+                    <span class="player-panel-stat" title="手牌数">${player.hand.length} 张</span>
+                    <span class="player-panel-stat" title="剩余连线">
+                        ${this.state.era === ERA.CANAL ? player.linksRemaining.canal : player.linksRemaining.rail} 线
                     </span>
                 </div>
             `;
@@ -286,8 +325,8 @@ class UIManager {
                 else cardEl.classList.add('wild-card');
                 const artLabel = card.type === CARD_TYPES.LOCATION
                     ? ''
-                    : `<span class="card-art-label">${card.name || (card.type === CARD_TYPES.WILD_LOCATION ? 'Wild Location' : 'Wild Industry')}</span>`;
-                cardEl.innerHTML = `<img src="${art}" alt="${card.type === CARD_TYPES.LOCATION ? card.name || '' : ''}" draggable="false">${artLabel}`;
+                    : `<span class="card-art-label">${cardDisplayName(card)}</span>`;
+                cardEl.innerHTML = `<img src="${art}" alt="${card.type === CARD_TYPES.LOCATION ? cardDisplayName(card) : ''}" draggable="false">${artLabel}`;
                 if (this.selectedCard === idx) cardEl.classList.add('selected');
                 if (this.selectedAction === ACTIONS.SCOUT &&
                         this.pendingData.scoutCards && this.pendingData.scoutCards.includes(idx)) {
@@ -315,9 +354,9 @@ class UIManager {
                 }
 
                 cardEl.innerHTML = `
-                    <div class="card-type">Location</div>
+                    <div class="card-type">地点</div>
                     <div style="font-size:20px;margin:4px 0;">📍</div>
-                    <div class="card-name">${card.name}</div>
+                    <div class="card-name">${cardDisplayName(card)}</div>
                 `;
             } else if (card.type === CARD_TYPES.INDUSTRY) {
                 cardEl.classList.add('industry-card');
@@ -336,23 +375,23 @@ class UIManager {
                     iconHtml = svgIcon || `<div class="card-icon">${display.icon}</div>`;
                 }
                 cardEl.innerHTML = `
-                    <div class="card-type">Industry</div>
+                    <div class="card-type">产业</div>
                     ${iconHtml}
-                    <div class="card-name">${card.name}</div>
+                    <div class="card-name">${cardDisplayName(card)}</div>
                 `;
             } else if (card.type === CARD_TYPES.WILD_LOCATION) {
                 cardEl.classList.add('wild-card');
                 cardEl.innerHTML = `
-                    <div class="card-type">Wild</div>
+                    <div class="card-type">万能</div>
                     <div class="card-icon">&#10038;</div>
-                    <div class="card-name">Location</div>
+                    <div class="card-name">地点</div>
                 `;
             } else if (card.type === CARD_TYPES.WILD_INDUSTRY) {
                 cardEl.classList.add('wild-card');
                 cardEl.innerHTML = `
-                    <div class="card-type">Wild</div>
+                    <div class="card-type">万能</div>
                     <div class="card-icon">&#10040;</div>
-                    <div class="card-name">Industry</div>
+                    <div class="card-name">产业</div>
                 `;
             }
 
@@ -407,17 +446,17 @@ class UIManager {
             // Disabled tooltips
             if (!canDo) {
                 const reason = this.logic.getDisabledReason(action, playerId);
-                btn.title = reason || 'Cannot perform this action';
+                btn.title = reason || '当前无法执行该行动';
             } else {
                 // Restore default tooltips
                 const defaultTitles = {
-                    build: 'Build an industry tile',
-                    network: 'Build a canal or rail link',
-                    develop: 'Remove lower-level tiles',
-                    sell: 'Sell cotton, goods, or pottery',
-                    loan: 'Take a £30 loan',
-                    scout: 'Trade 3 cards for 2 wild cards',
-                    pass: 'Pass (discard a card)',
+                    build: '建造一个产业板块',
+                    network: '建造运河或铁路',
+                    develop: '移除低等级板块',
+                    sell: '出售棉花、商品或陶瓷',
+                    loan: '贷款 £30',
+                    scout: '弃 3 张牌换 2 张万能牌',
+                    pass: '跳过（弃一张牌）',
                 };
                 btn.title = defaultTitles[action] || '';
             }
@@ -445,29 +484,29 @@ class UIManager {
                 const cls = tile.used ? 'mat-tile used' : 'mat-tile available';
                 // Cost details (money, coal, iron)
                 const costParts = [`£${tile.cost}`];
-                if (tile.costCoal > 0) costParts.push(`${tile.costCoal} coal`);
-                if (tile.costIron > 0) costParts.push(`${tile.costIron} iron`);
+                if (tile.costCoal > 0) costParts.push(`${tile.costCoal} 煤炭`);
+                if (tile.costIron > 0) costParts.push(`${tile.costIron} 铁`);
                 const costStr = costParts.join(' + ');
 
                 // Era availability
-                const eraStr = (tile.canalEra && tile.railEra) ? 'Canal & Rail'
-                             : tile.canalEra ? 'Canal only' : 'Rail only';
+                const eraStr = (tile.canalEra && tile.railEra) ? '运河与铁路时代'
+                             : tile.canalEra ? '仅运河时代' : '仅铁路时代';
 
                 // Industry-specific traits
                 let extra = '';
                 if (tile.beersToSell !== null && tile.beersToSell !== undefined) {
-                    extra = ` | Sell: ${tile.beersToSell} beer`;
+                    extra = ` | 出售需 ${tile.beersToSell} 啤酒`;
                 } else if (tile.resourceCubes > 0) {
-                    extra = ` | Produces: ${tile.resourceCubes} cubes`;
+                    extra = ` | 产出 ${tile.resourceCubes} 个资源`;
                 }
                 if (!tile.canDevelop) {
-                    extra += ' | Cannot develop';
+                    extra += ' | 不可发展';
                 }
 
-                const tooltip = `${display.name} Lv${tile.level} (${tile.used ? 'Used' : 'Available'})\n` +
-                                `Cost: ${costStr}\n` +
-                                `Flip: ${tile.vp} VP, +${tile.income} Income${extra}\n` +
-                                `Era: ${eraStr}`;
+                const tooltip = `${display.name} Lv${tile.level}（${tile.used ? '已用' : '可用'}）\n` +
+                                `费用：${costStr}\n` +
+                                `翻面：${tile.vp} 分，收入 +${tile.income}${extra}\n` +
+                                `时代：${eraStr}`;
                 if (chips) {
                     // The chip face already carries its level and industry.
                     const art = BoardAssets.tileUrl(type, tile.level, false);
@@ -512,7 +551,7 @@ class UIManager {
         coalTrack.innerHTML = '';
         const coalPrice = this.state.getCoalPrice();
         document.getElementById('coal-current-price').textContent =
-            coalPrice === Infinity ? 'Empty' : `Price: £${coalPrice}`;
+            coalPrice === Infinity ? '售罄' : `价格：£${coalPrice}`;
 
         for (let i = 0; i < COAL_MARKET_PRICES.length; i++) {
             const filled = i >= (COAL_MARKET_PRICES.length - this.state.coalMarket);
@@ -529,7 +568,7 @@ class UIManager {
         ironTrack.innerHTML = '';
         const ironPrice = this.state.getIronPrice();
         document.getElementById('iron-current-price').textContent =
-            ironPrice === Infinity ? 'Empty' : `Price: £${ironPrice}`;
+            ironPrice === Infinity ? '售罄' : `价格：£${ironPrice}`;
 
         for (let i = 0; i < IRON_MARKET_PRICES.length; i++) {
             const filled = i >= (IRON_MARKET_PRICES.length - this.state.ironMarket);
@@ -560,7 +599,7 @@ class UIManager {
 
         // Determine which step we're on
         let currentStep = 1; // Choose Action
-        let instructionText = 'Select an action';
+        let instructionText = '请选择一个行动';
 
         if (this.selectedAction && this.actionStep === 0) {
             currentStep = 2; // Select Target
@@ -569,9 +608,9 @@ class UIManager {
             currentStep = 3; // Discard Card
             if (this.selectedAction === ACTIONS.SCOUT) {
                 const remaining = 3 - (this.pendingData.scoutCards?.length || 0);
-                instructionText = `Select ${remaining} card${remaining !== 1 ? 's' : ''} to discard`;
+                instructionText = `请选择 ${remaining} 张要弃掉的牌`;
             } else {
-                instructionText = 'Click a card to discard';
+                instructionText = '点击一张牌弃掉';
             }
         }
 
@@ -590,13 +629,13 @@ class UIManager {
 
     getTargetInstruction() {
         switch (this.selectedAction) {
-            case ACTIONS.BUILD: return 'Select what to build from the list';
-            case ACTIONS.NETWORK: return 'Select a connection to build';
-            case ACTIONS.DEVELOP: return 'Select a tile to develop';
-            case ACTIONS.SELL: return 'Select industries to sell';
-            case ACTIONS.LOAN: return 'Select a card to discard for £30 loan';
-            case ACTIONS.SCOUT: return 'Select 3 cards to discard';
-            case ACTIONS.PASS: return 'Select a card to discard';
+            case ACTIONS.BUILD: return '从列表中选择要建造的产业';
+            case ACTIONS.NETWORK: return '选择要建造的连线';
+            case ACTIONS.DEVELOP: return '选择要发展的板块';
+            case ACTIONS.SELL: return '选择要出售的产业';
+            case ACTIONS.LOAN: return '弃一张牌以贷款 £30';
+            case ACTIONS.SCOUT: return '选择 3 张要弃掉的牌';
+            case ACTIONS.PASS: return '选择一张要弃掉的牌';
             default: return '';
         }
     }
@@ -624,7 +663,8 @@ class UIManager {
 
         container.innerHTML = '';
 
-        for (const entry of this.gameLog) {
+        for (const raw of this.gameLog) {
+            const entry = { ...raw, message: UIManager.trLog(raw.message) };
             const div = document.createElement('div');
             div.className = 'log-entry';
 
@@ -658,7 +698,7 @@ class UIManager {
 
         nameEl.textContent = player.name;
         nameEl.style.color = player.color;
-        if (subtitleEl) subtitleEl.textContent = this.online ? '轮到你了' : (player.isAI ? 'AI Turn' : 'Your Turn');
+        if (subtitleEl) subtitleEl.textContent = this.online ? '轮到你了' : (player.isAI ? 'AI 回合' : '你的回合');
 
         overlay.classList.remove('hidden', 'fade-out');
 
@@ -763,7 +803,7 @@ class UIManager {
     startBuild(playerId) {
         const targets = this.logic.getValidBuildTargets(playerId);
         if (targets.length === 0) {
-            this.showToast('No valid build targets available', 'warning');
+            this.showToast('没有可建造的位置', 'warning');
             this.cancelAction();
             return;
         }
@@ -795,11 +835,11 @@ class UIManager {
                         <div class="choice-item-icon">${display.icon}</div>
                         <div class="choice-item-text">
                             <div class="choice-item-name">${display.name} Lv${target.tileData.level}</div>
-                            <div class="choice-item-detail">${cityName} (Slot ${target.slotIndex + 1})</div>
+                            <div class="choice-item-detail">${cityName} （第 ${target.slotIndex + 1} 格）</div>
                         </div>
                         <div class="choice-item-cost">£${target.cost.total}
-                            ${target.cost.coal > 0 ? ` + ${target.cost.coal} coal` : ''}
-                            ${target.cost.iron > 0 ? ` + ${target.cost.iron} iron` : ''}
+                            ${target.cost.coal > 0 ? ` + ${target.cost.coal} 煤炭` : ''}
+                            ${target.cost.iron > 0 ? ` + ${target.cost.iron} 铁` : ''}
                         </div>
                     </div>
                 `;
@@ -807,7 +847,7 @@ class UIManager {
         }
         html += '</div>';
 
-        this.showModal('Build Industry', html, () => {});
+        this.showModal('建造产业', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -831,7 +871,7 @@ class UIManager {
     startNetwork(playerId) {
         const targets = this.logic.getValidNetworkTargets(playerId);
         if (targets.length === 0) {
-            this.showToast('No valid network targets', 'warning');
+            this.showToast('没有可建造的连线', 'warning');
             this.cancelAction();
             return;
         }
@@ -840,14 +880,14 @@ class UIManager {
 
         let html = '<div class="choice-list">';
         for (const target of targets) {
-            const city1 = CITIES[target.cities[0]]?.name || MERCHANTS[target.cities[0]]?.name || target.cities[0];
-            const city2 = CITIES[target.cities[1]]?.name || MERCHANTS[target.cities[1]]?.name || target.cities[1];
+            const city1 = locationName(target.cities[0]);
+            const city2 = locationName(target.cities[1]);
             html += `
                 <div class="choice-item" data-conn="${target.connectionId}">
                     <div class="choice-item-icon">${target.type === 'canal' ? '~' : '#'}</div>
                     <div class="choice-item-text">
                         <div class="choice-item-name">${city1} — ${city2}</div>
-                        <div class="choice-item-detail">${target.type}</div>
+                        <div class="choice-item-detail">${target.type === 'canal' ? '运河' : '铁路'}</div>
                     </div>
                     <div class="choice-item-cost">£${target.cost}</div>
                 </div>
@@ -855,7 +895,7 @@ class UIManager {
         }
         html += '</div>';
 
-        this.showModal('Build Link', html, () => {});
+        this.showModal('建网', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -886,27 +926,27 @@ class UIManager {
     }
 
     showSecondRailModal(firstConnId, seconds) {
-        const name = id => CITIES[id]?.name || MERCHANTS[id]?.name || id;
+        const name = id => locationName(id);
 
         let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">' +
-            'Optionally build a second rail link — £15 total for both links, plus 1 coal per link and 1 beer from a brewery.</p>';
+            '可选：再建第二条铁路——两条共 £15，每条另需 1 煤炭，并消耗酿酒厂的 1 桶啤酒。</p>';
         html += '<div class="choice-list">';
-        html += '<div class="choice-item" data-conn="none"><div class="choice-item-text"><div class="choice-item-name">Just one link</div><div class="choice-item-detail">£5 + 1 coal</div></div></div>';
+        html += '<div class="choice-item" data-conn="none"><div class="choice-item-text"><div class="choice-item-name">只建一条</div><div class="choice-item-detail">£5 + 1 煤炭</div></div></div>';
         for (const s of seconds) {
             html += `
                 <div class="choice-item" data-conn="${s.connectionId}">
                     <div class="choice-item-icon">#</div>
                     <div class="choice-item-text">
                         <div class="choice-item-name">${name(s.cities[0])} — ${name(s.cities[1])}</div>
-                        <div class="choice-item-detail">2nd link · +1 beer</div>
+                        <div class="choice-item-detail">第二条 · +1 啤酒</div>
                     </div>
-                    <div class="choice-item-cost">£15 total${s.coalCost > 0 ? ` + £${s.coalCost} coal` : ''}</div>
+                    <div class="choice-item-cost">共 £15${s.coalCost > 0 ? ` + £${s.coalCost} 煤炭` : ''}</div>
                 </div>
             `;
         }
         html += '</div>';
 
-        this.showModal('Second Rail Link?', html, () => {});
+        this.showModal('建第二条铁路？', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -929,12 +969,12 @@ class UIManager {
     startDevelop(playerId) {
         const types = this.logic.getDevelopableTypes(playerId);
         if (types.length === 0) {
-            this.showToast('Nothing to develop', 'warning');
+            this.showToast('没有可发展的板块', 'warning');
             this.cancelAction();
             return;
         }
 
-        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Remove 1-2 tiles from your mat to access higher levels. Costs 1 iron per tile.</p>';
+        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">从玩家板上移除 1–2 个板块以解锁更高等级，每个板块消耗 1 铁。</p>';
         html += '<div class="choice-list">';
         for (const t of types) {
             const display = INDUSTRY_DISPLAY[t.type];
@@ -943,14 +983,14 @@ class UIManager {
                     <div class="choice-item-icon">${display.icon}</div>
                     <div class="choice-item-text">
                         <div class="choice-item-name">${display.name} Lv${t.level}</div>
-                        <div class="choice-item-detail">Remove this tile</div>
+                        <div class="choice-item-detail">移除此板块</div>
                     </div>
                 </div>
             `;
         }
         html += '</div>';
 
-        this.showModal('Develop (Select 1st tile)', html, () => {});
+        this.showModal('发展（选择第 1 个板块）', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -982,9 +1022,9 @@ class UIManager {
             return;
         }
 
-        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Optionally develop a second tile (costs another iron).</p>';
+        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">可选：再发展第二个板块（再消耗 1 铁）。</p>';
         html += '<div class="choice-list">';
-        html += '<div class="choice-item" data-type="none"><div class="choice-item-text"><div class="choice-item-name">Done (develop 1 tile only)</div></div></div>';
+        html += '<div class="choice-item" data-type="none"><div class="choice-item-text"><div class="choice-item-name">完成（只发展 1 个）</div></div></div>';
 
         for (const t of remainingTypes) {
             const display = INDUSTRY_DISPLAY[t.type];
@@ -999,7 +1039,7 @@ class UIManager {
         }
         html += '</div>';
 
-        this.showModal('Develop (Optional 2nd tile)', html, () => {});
+        this.showModal('发展（可选第 2 个板块）', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -1020,7 +1060,7 @@ class UIManager {
     startSell(playerId) {
         const targets = this.logic.getValidSellTargets(playerId);
         if (targets.length === 0) {
-            this.showToast('Nothing to sell', 'warning');
+            this.showToast('没有可出售的产业', 'warning');
             this.cancelAction();
             return;
         }
@@ -1028,8 +1068,7 @@ class UIManager {
         const byKey = {};
         targets.forEach(t => { byKey[t.key] = t; t.sources = this.logic.getSellBeerSources(playerId, t.key); });
 
-        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Select industries to sell (you may sell multiple in one action). '
-            + '点选要出售的产业（可一次卖多个），再为每个产业选择用哪桶啤酒：自己的酿酒厂（不需相连）、相连的对手酿酒厂（用完会让对方翻面加收入），或所卖商人的啤酒（得到该商人的奖励）。</p>';
+        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">点选要出售的产业（可一次卖多个），再为每个产业选择用哪桶啤酒：自己的酿酒厂（不需相连）、相连的对手酿酒厂（用完会让对方翻面加收入），或所卖商人的啤酒（得到该商人的奖励）。</p>';
         html += '<div class="choice-list">';
         for (const target of targets) {
             const display = INDUSTRY_DISPLAY[target.tile.type];
@@ -1039,8 +1078,8 @@ class UIManager {
                     <div class="choice-item-icon">${display.icon}</div>
                     <div class="choice-item-text">
                         <div class="choice-item-name">${display.name} Lv${target.tile.tileData.level}</div>
-                        <div class="choice-item-detail">${cityName} | VP: ${target.tile.tileData.vp} | Income: +${target.tile.tileData.income}
-                        ${target.beerNeeded > 0 ? ` | 啤酒 Beer: ${target.beerNeeded}` : ' | 不需要啤酒'}</div>
+                        <div class="choice-item-detail">${cityName} | 分数：${target.tile.tileData.vp} | 收入：+${target.tile.tileData.income}
+                        ${target.beerNeeded > 0 ? ` | 需啤酒：${target.beerNeeded}` : ' | 不需要啤酒'}</div>
                         <div class="sell-beer" data-key="${target.key}"></div>
                     </div>
                 </div>
@@ -1048,8 +1087,8 @@ class UIManager {
         }
         html += '</div>';
 
-        const footer = '<div id="sell-status" class="sell-status"></div><button class="modal-btn modal-btn-primary" id="confirm-sell">Sell Selected</button>';
-        this.showModal('Sell Goods', html, null, footer);
+        const footer = '<div id="sell-status" class="sell-status"></div><button class="modal-btn modal-btn-primary" id="confirm-sell">出售所选</button>';
+        this.showModal('销售', html, null, footer);
 
         const selected = [];   // keys, in the order they will be sold
         const choice = {};     // key -> [sourceId | '']
@@ -1133,7 +1172,7 @@ class UIManager {
 
         confirmBtn.addEventListener('click', () => {
             if (selected.length === 0) {
-                this.showToast('Select at least one industry to sell', 'warning');
+                this.showToast('请至少选择一个要出售的产业', 'warning');
                 return;
             }
             if (!validate()) {
@@ -1232,7 +1271,7 @@ class UIManager {
                     const display = INDUSTRY_DISPLAY[this.pendingData.industryType];
                     const cityName = CITIES[this.pendingData.cityId]?.name ||
                         BREWERY_FARMS[this.pendingData.cityId]?.name || this.pendingData.cityId;
-                    this.addLogEntry(playerId, `built ${display.name} in ${cityName}`);
+                    this.addLogEntry(playerId, `在${cityName}建造了 ${display.name}`);
                 }
                 this.completeAction(result);
                 break;
@@ -1250,7 +1289,7 @@ class UIManager {
                         this.pendingData.connectionId,
                         cardIndex);
                 if (result.success) {
-                    this.addLogEntry(playerId, result.message.replace(/^Built /, 'built '));
+                    this.addLogEntry(playerId, result.message);
                 }
                 this.completeAction(result);
                 break;
@@ -1264,7 +1303,7 @@ class UIManager {
                     cardIndex
                 );
                 if (result.success) {
-                    this.addLogEntry(playerId, result.message.toLowerCase());
+                    this.addLogEntry(playerId, result.message);
                 }
                 this.completeAction(result);
                 break;
@@ -1278,7 +1317,7 @@ class UIManager {
                     { autoResolveDevelop: this.state.players[playerId].isAI }
                 );
                 if (result.success) {
-                    this.addLogEntry(playerId, result.message.toLowerCase());
+                    this.addLogEntry(playerId, result.message);
                     if (result.pendingDevelopBonuses > 0) {
                         // Gloucester bonus: let the human choose which tile(s)
                         // to remove before the turn advances
@@ -1294,7 +1333,7 @@ class UIManager {
             case ACTIONS.LOAN: {
                 const result = this.logic.executeLoan(playerId, cardIndex);
                 if (result.success) {
-                    this.addLogEntry(playerId, `took £${LOAN_AMOUNT} loan`);
+                    this.addLogEntry(playerId, `贷款 £${LOAN_AMOUNT}`);
                 }
                 this.completeAction(result);
                 break;
@@ -1313,7 +1352,7 @@ class UIManager {
                 if (this.pendingData.scoutCards.length >= 3) {
                     const result = this.logic.executeScout(playerId, this.pendingData.scoutCards);
                     if (result.success) {
-                        this.addLogEntry(playerId, 'scouted (gained wild cards)');
+                        this.addLogEntry(playerId, '侦察（获得万能牌）');
                     }
                     this.completeAction(result);
                 } else {
@@ -1327,7 +1366,7 @@ class UIManager {
             case ACTIONS.PASS: {
                 const result = this.logic.executePass(playerId, cardIndex);
                 if (result.success) {
-                    this.addLogEntry(playerId, 'passed');
+                    this.addLogEntry(playerId, '跳过');
                 }
                 this.completeAction(result);
                 break;
@@ -1350,9 +1389,9 @@ class UIManager {
             return;
         }
 
-        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Merchant bonus: remove a tile from your mat for free (no iron cost), or skip.</p>';
+        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">商人奖励：免费从玩家板上移除一个板块（不消耗铁），或放弃。</p>';
         html += '<div class="choice-list">';
-        html += '<div class="choice-item" data-type="skip"><div class="choice-item-text"><div class="choice-item-name">Skip bonus</div></div></div>';
+        html += '<div class="choice-item" data-type="skip"><div class="choice-item-text"><div class="choice-item-name">放弃奖励</div></div></div>';
         for (const t of types) {
             const display = INDUSTRY_DISPLAY[t.type];
             html += `
@@ -1366,7 +1405,7 @@ class UIManager {
         }
         html += '</div>';
 
-        this.showModal('Free Develop (Merchant Bonus)', html, () => {});
+        this.showModal('免费发展（商人奖励）', html, () => {});
 
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -1385,7 +1424,7 @@ class UIManager {
                 }
                 const removed = this.logic.applyFreeDevelop(playerId, 1, type);
                 if (removed.length) {
-                    this.addLogEntry(playerId, `used merchant bonus: developed ${removed[0]}`);
+                    this.addLogEntry(playerId, `使用商人奖励：免费发展 ${removed[0]}`);
                 }
                 this.resolveDevelopBonuses(playerId, count - 1, done);
             });
@@ -1419,16 +1458,16 @@ class UIManager {
         this.state.lastRoundEvents = [];
 
         if (turnResult === 'endCanalEra') {
-            this.addLogEntry(null, 'Canal Era Scoring', 'era');
+            this.addLogEntry(null, '运河时代计分', 'era');
             const scores = this.state.endCanalEra();
-            this.addLogEntry(null, 'Rail Era', 'era');
+            this.addLogEntry(null, '铁路时代', 'era');
             this.refresh();
-            this.showScoring('Canal Era Complete', scores);
+            this.showScoring('运河时代结束', scores);
             // runAITurnLoop() resumes from the scoring modal's Continue button
             // (see showScoring) — never auto-continue while it's blocking the screen.
             return;
         } else if (turnResult === 'endGame') {
-            this.addLogEntry(null, 'Final Scoring', 'era');
+            this.addLogEntry(null, '最终计分', 'era');
             const scores = this.state.endGame();
             this.refresh();
             this.showGameOver(scores);
@@ -1437,7 +1476,7 @@ class UIManager {
             // Check if player changed - show transition
             const newPlayerId = this.state.currentPlayerId;
             if (newPlayerId !== previousPlayerId) {
-                this.addLogEntry(null, `${this.state.currentPlayer.name}'s turn`, 'system');
+                this.addLogEntry(null, `轮到 ${this.state.currentPlayer.name}`, 'system');
                 this.showTurnTransition(this.state.currentPlayer);
             }
         }
@@ -1579,9 +1618,9 @@ class UIManager {
 
     showScoring(title, scores) {
         const overlay = document.getElementById('scoring-overlay');
-        document.getElementById('scoring-title').textContent = title;
+        document.getElementById('scoring-title').textContent = UIManager.trLog(title);
 
-        let html = '<table class="scoring-table"><thead><tr><th>Player</th><th>Link VP</th><th>Industry VP</th><th>Total VP</th></tr></thead><tbody>';
+        let html = '<table class="scoring-table"><thead><tr><th>玩家</th><th>连线分</th><th>产业分</th><th>总分</th></tr></thead><tbody>';
         for (const s of scores) {
             const player = this.state.players[s.playerId];
             html += `<tr>
@@ -1619,7 +1658,7 @@ class UIManager {
             (this.state.getIncomeLevel(b.id) - this.state.getIncomeLevel(a.id)) ||
             (b.money - a.money));
 
-        let html = '<table class="scoring-table"><thead><tr><th>Rank</th><th>Player</th><th>VP</th><th>Income</th><th>Money</th></tr></thead><tbody>';
+        let html = '<table class="scoring-table"><thead><tr><th>名次</th><th>玩家</th><th>分数</th><th>收入</th><th>资金</th></tr></thead><tbody>';
         sorted.forEach((p, i) => {
             html += `<tr${i === 0 ? ' class="total-row"' : ''}>
                 <td>${i + 1}</td>
@@ -1635,7 +1674,7 @@ class UIManager {
         overlay.classList.remove('hidden');
 
         const newGameBtn = document.getElementById('new-game-btn');
-        newGameBtn.textContent = this.online ? (this.online.isHost ? '回到房间再来一局' : '关闭') : 'New Game';
+        newGameBtn.textContent = this.online ? (this.online.isHost ? '回到房间再来一局' : '关闭') : '新游戏';
         newGameBtn.onclick = () => {
             overlay.classList.add('hidden');
             if (this.online) {
@@ -1647,3 +1686,39 @@ class UIManager {
         };
     }
 }
+
+UIManager.LOG_NAMES = [
+        ["Burton-on-Trent", "伯顿"],
+        ["Stoke-on-Trent", "斯托克"],
+        ["Wolverhampton", "伍尔弗汉普顿"],
+        ["Coalbrookdale", "科尔布鲁克代尔"],
+        ["Kidderminster", "基德明斯特"],
+        ["Manufacturer", "制造厂"],
+        ["Cotton Mill", "棉纺厂"],
+        ["Brewery (N)", "酿酒厂（北）"],
+        ["Brewery (S)", "酿酒厂（南）"],
+        ["Birmingham", "伯明翰"],
+        ["Shrewsbury", "什鲁斯伯里"],
+        ["Gloucester", "格洛斯特"],
+        ["Warrington", "沃灵顿"],
+        ["Nottingham", "诺丁汉"],
+        ["Iron Works", "铁厂"],
+        ["Uttoxeter", "阿托克西特"],
+        ["Worcester", "伍斯特"],
+        ["Coal Mine", "煤矿"],
+        ["Stafford", "斯塔福德"],
+        ["Tamworth", "塔姆沃思"],
+        ["Coventry", "考文垂"],
+        ["Nuneaton", "纳尼顿"],
+        ["Redditch", "雷迪奇"],
+        ["Cannock", "坎诺克"],
+        ["Walsall", "沃尔索尔"],
+        ["Pottery", "陶瓷厂"],
+        ["Brewery", "酿酒厂"],
+        ["Belper", "贝尔珀"],
+        ["Dudley", "达德利"],
+        ["Oxford", "牛津"],
+        ["Derby", "德比"],
+        ["Stone", "斯通"],
+        ["Leek", "利克"]
+];

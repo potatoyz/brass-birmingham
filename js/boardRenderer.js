@@ -631,7 +631,7 @@ class BoardRenderer {
             x: -132, y: -11, width: 264, height: 22, rx: 3, ry: 3,
             fill: '#191d25', stroke: '#c9a84c', 'stroke-width': 0.9, 'stroke-opacity': 0.7,
         }));
-        cart.appendChild(this.text('BRASS · BIRMINGHAM', {
+        cart.appendChild(this.text('工业革命 · 伯明翰', {
             x: 0, y: 1, 'text-anchor': 'middle', 'dominant-baseline': 'central',
             'font-family': 'Cinzel, serif', 'font-size': '11',
             'letter-spacing': '4.5', fill: '#e2c98c',
@@ -640,7 +640,7 @@ class BoardRenderer {
 
         // Era legend along the top rail.
         const era = this.state ? this.state.era : ERA.CANAL;
-        const eraLabel = era === ERA.RAIL ? 'RAIL ERA · 1830–1870' : 'CANAL ERA · 1770–1830';
+        const eraLabel = era === ERA.RAIL ? '铁路时代 · 1830–1870' : '运河时代 · 1770–1830';
         const top = this.createGroup({ transform: `translate(${this.W / 2}, ${-M / 2})` });
         top.appendChild(this.createElement('rect', {
             x: -104, y: -10, width: 208, height: 20, rx: 3, ry: 3,
@@ -1145,9 +1145,9 @@ class BoardRenderer {
                 fill: '#2a2620', stroke: '#8a7647', 'stroke-width': 0.9,
             }));
 
-            g.appendChild(this.text(merch.name.toUpperCase(), {
+            g.appendChild(this.text(merch.name, {
                 x: 0, y: -1, class: 'merchant-label',
-                'font-size': merch.name.length > 10 ? '7' : '8',
+                'font-size': merch.name.length > 4 ? '7' : '8',
                 'dominant-baseline': 'central',
             }));
             g.appendChild(this.createElement('path', {
@@ -1172,7 +1172,7 @@ class BoardRenderer {
                         'font-size': '9', fill: 'rgba(230,220,195,0.35)',
                     }));
                 } else if (mt.buys === 'any') {
-                    g.appendChild(this.text('ANY', {
+                    g.appendChild(this.text('任意', {
                         x: x0 + 34, y: cy, 'dominant-baseline': 'central',
                         'font-family': 'Cinzel, serif', 'font-size': '8',
                         'letter-spacing': '1', fill: '#e2c98c',
@@ -1191,10 +1191,10 @@ class BoardRenderer {
 
             // Beer bonus, on a small brass plate at the foot.
             let bonusStr = '';
-            if (merch.bonusType === 'vp') bonusStr = `+${merch.bonusAmount} VP`;
+            if (merch.bonusType === 'vp') bonusStr = `+${merch.bonusAmount} 分`;
             else if (merch.bonusType === 'money') bonusStr = `+£${merch.bonusAmount}`;
-            else if (merch.bonusType === 'income') bonusStr = `+${merch.bonusAmount} INCOME`;
-            else if (merch.bonusType === 'develop') bonusStr = 'FREE DEVELOP';
+            else if (merch.bonusType === 'income') bonusStr = `收入 +${merch.bonusAmount}`;
+            else if (merch.bonusType === 'develop') bonusStr = '免费发展';
             if (bonusStr) {
                 g.appendChild(this.createElement('rect', {
                     x: x0 + 7, y: h - 20, width: w - 14, height: 12,
@@ -1493,10 +1493,10 @@ class BoardRenderer {
             x: 6, y: 6, width: 300, height: 40, rx: 4, ry: 4,
             fill: 'rgba(10,12,16,0.85)', stroke: '#c9a84c', 'stroke-width': 1,
         }));
-        g.appendChild(this.text('CALIBRATION \u2014 drag locations into place', {
+        g.appendChild(this.text('校准模式 \u2014 拖动地点到正确位置', {
             x: 16, y: 22, 'font-family': 'Cinzel, serif', 'font-size': '11', fill: '#e8d3a0',
         }));
-        g.appendChild(this.text(`saved automatically \u00B7 ${moved} placed \u00B7 c = dump JSON \u00B7 r = reset`, {
+        g.appendChild(this.text(`自动保存 \u00B7 已放置 ${moved} 个 \u00B7 c = 导出 JSON \u00B7 r = 重置`, {
             x: 16, y: 37, 'font-size': '9.5', fill: 'rgba(235,225,200,0.75)',
         }));
         this.svg.appendChild(g);

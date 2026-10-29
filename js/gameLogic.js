@@ -226,10 +226,10 @@ class GameLogic {
         // internally, so calling useNextTile first would advance the tile pointer and
         // compute cost for the wrong (next-level) tile.
         const cost = this.calculateBuildCost(playerId, industryType, cityId);
-        if (!cost) return { success: false, message: 'Cannot afford this build' };
+        if (!cost) return { success: false, message: '钱不够，无法建造' };
 
         const tileData = this.state.useNextTile(playerId, industryType);
-        if (!tileData) return { success: false, message: 'No tile available' };
+        if (!tileData) return { success: false, message: '没有可用的板块' };
 
         this.state.spendMoney(playerId, cost.total);
 
@@ -314,10 +314,10 @@ class GameLogic {
         this.discardCard(playerId, cardIndex);
 
         const locName = isFarm ? BREWERY_FARMS[cityId].name : CITIES[cityId].name;
-        let message = `Built ${INDUSTRY_DISPLAY[industryType].name} Level ${tileData.level} in ${locName}`;
+        let message = `在${locName}建造了 ${INDUSTRY_DISPLAY[industryType].name} Lv${tileData.level}`;
         if (marketSale && marketSale.cubesMoved > 0) {
-            message += ` — sold ${marketSale.cubesMoved} to market for £${marketSale.moneyGained}`;
-            if (marketSale.flipped) message += ' (tile flipped!)';
+            message += `，向市场卖出 ${marketSale.cubesMoved} 个得 £${marketSale.moneyGained}`;
+            if (marketSale.flipped) message += '（板块已翻面！）';
         }
         return { success: true, message };
     }
@@ -401,7 +401,7 @@ class GameLogic {
     executeNetwork(playerId, connectionId, cardIndex) {
         const player = this.state.players[playerId];
         const conn = CONNECTIONS.find(c => c.id === connectionId);
-        if (!conn) return { success: false, message: 'Invalid connection' };
+        if (!conn) return { success: false, message: '无效的连线' };
 
         const era = this.state.era;
         const linkType = era === ERA.CANAL ? 'canal' : 'rail';
@@ -440,10 +440,10 @@ class GameLogic {
         // Discard card
         this.discardCard(playerId, cardIndex);
 
-        const city1 = CITIES[conn.cities[0]]?.name || MERCHANTS[conn.cities[0]]?.name || conn.cities[0];
-        const city2 = CITIES[conn.cities[1]]?.name || MERCHANTS[conn.cities[1]]?.name || conn.cities[1];
+        const city1 = locationName(conn.cities[0]);
+        const city2 = locationName(conn.cities[1]);
 
-        return { success: true, message: `Built ${linkType} link: ${city1} - ${city2}` };
+        return { success: true, message: `建造了${linkType === 'canal' ? '运河' : '铁路'}：${city1} - ${city2}` };
     }
 
     // ------------------------------------------------------------------
@@ -546,11 +546,11 @@ class GameLogic {
         const player = this.state.players[playerId];
         const conn1 = CONNECTIONS.find(c => c.id === connectionId1);
         const conn2 = CONNECTIONS.find(c => c.id === connectionId2);
-        if (!conn1 || !conn2) return { success: false, message: 'Invalid connection' };
-        if (this.state.era !== ERA.RAIL) return { success: false, message: 'Double links are Rail Era only' };
-        if (player.linksRemaining.rail < 2) return { success: false, message: 'Not enough rail links' };
+        if (!conn1 || !conn2) return { success: false, message: '无效的连线' };
+        if (this.state.era !== ERA.RAIL) return { success: false, message: '只有铁路时代才能一次建两条铁路' };
+        if (player.linksRemaining.rail < 2) return { success: false, message: '剩余铁路不足' };
         if (this.state.boardLinks[connectionId1] || this.state.boardLinks[connectionId2]) {
-            return { success: false, message: 'Connection already built' };
+            return { success: false, message: '该连线已被建造' };
         }
 
         // --- Validation phase: place links and dry-run coal consumption ---
@@ -582,32 +582,32 @@ class GameLogic {
         if (!hasNoTiles &&
             !this.state.isInNetwork(playerId, conn1.cities[0]) &&
             !this.state.isInNetwork(playerId, conn1.cities[1])) {
-            return fail('First link is not adjacent to your network');
+            return fail('第一条铁路不与你的网络相邻');
         }
         this.state.boardLinks[connectionId1] = { playerId, type: 'rail' };
         undo.push(() => delete this.state.boardLinks[connectionId1]);
 
         const coalSrc1 = this.findCheapestCoalForLink(conn1, playerId);
-        if (!coalSrc1) return fail('No coal for first link');
+        if (!coalSrc1) return fail('第一条铁路没有可用的煤炭');
         let totalCost = RAIL_DOUBLE_LINK_COST + (coalSrc1.free ? 0 : coalSrc1.price);
         dryConsumeCoal(coalSrc1);
 
         // Link 2: adjacency with link 1 on the board, then coal + beer
         if (!this.state.isInNetwork(playerId, conn2.cities[0]) &&
             !this.state.isInNetwork(playerId, conn2.cities[1])) {
-            return fail('Second link is not adjacent to your network');
+            return fail('第二条铁路不与你的网络相邻');
         }
         this.state.boardLinks[connectionId2] = { playerId, type: 'rail' };
         undo.push(() => delete this.state.boardLinks[connectionId2]);
 
         const coalSrc2 = this.findCheapestCoalForLink(conn2, playerId);
-        if (!coalSrc2) return fail('No coal for second link');
+        if (!coalSrc2) return fail('第二条铁路没有可用的煤炭');
         totalCost += coalSrc2.free ? 0 : coalSrc2.price;
         dryConsumeCoal(coalSrc2);
 
         const beer = this.findBeerForLink(playerId, conn2);
-        if (!beer) return fail('No beer available for the second link');
-        if (totalCost > player.money) return fail('Cannot afford both links');
+        if (!beer) return fail('第二条铁路没有可用的啤酒');
+        if (totalCost > player.money) return fail('钱不够建两条铁路');
 
         // --- Commit ---
         // Flip any mines the dry-run emptied (grants their owner income)
@@ -619,10 +619,10 @@ class GameLogic {
         player.linksRemaining.rail -= 2;
         this.discardCard(playerId, cardIndex);
 
-        const name = id => CITIES[id]?.name || MERCHANTS[id]?.name || id;
+        const name = id => locationName(id);
         return {
             success: true,
-            message: `Built 2 rail links: ${name(conn1.cities[0])} - ${name(conn1.cities[1])} and ${name(conn2.cities[0])} - ${name(conn2.cities[1])} (1 beer consumed)`,
+            message: `建造了 2 条铁路：${name(conn1.cities[0])} - ${name(conn1.cities[1])} 和 ${name(conn2.cities[0])} - ${name(conn2.cities[1])}（消耗 1 桶啤酒）`,
         };
     }
 
@@ -697,7 +697,7 @@ class GameLogic {
         const tilesToDevelop = industryType2 ? 2 : 1;
         const ironSources = this.state.findIronSource(playerId);
         if (ironSources.length < tilesToDevelop) {
-            return { success: false, message: 'Not enough iron available' };
+            return { success: false, message: '没有足够的铁' };
         }
 
         // Pre-check: can player afford market iron for each unit needed?
@@ -706,7 +706,7 @@ class GameLogic {
             if (!ironSources[i].free) moneyNeeded += ironSources[i].price;
         }
         if (moneyNeeded > player.money) {
-            return { success: false, message: 'Cannot afford market iron' };
+            return { success: false, message: '钱不够从市场买铁' };
         }
 
         // Consume iron (1 per tile developed)
@@ -732,8 +732,8 @@ class GameLogic {
         // Discard card
         this.discardCard(playerId, cardIndex);
 
-        let msg = `Developed ${INDUSTRY_DISPLAY[industryType1].name}`;
-        if (tile2) msg += ` and ${INDUSTRY_DISPLAY[industryType2].name}`;
+        let msg = `发展了 ${INDUSTRY_DISPLAY[industryType1].name}`;
+        if (tile2) msg += ` 和 ${INDUSTRY_DISPLAY[industryType2].name}`;
 
         return { success: true, message: msg };
     }
@@ -832,11 +832,11 @@ class GameLogic {
 
     // Human-readable name of a beer source; zh=true for the Chinese UI.
     // viewerId marks "own" breweries.
-    beerSourceLabel(id, zh = false, viewerId = null) {
+    beerSourceLabel(id, zh = true, viewerId = null) {
         if (id.startsWith('m:')) {
             const mt = this.state.merchantTiles[+id.slice(2)];
             const md = mt && MERCHANTS[mt.location];
-            if (!md) return zh ? '商人啤酒' : 'Merchant beer';
+            if (!md) return '商人啤酒';
             const n = md.bonusAmount;
             const bonus = zh
                 ? ({ vp: `+${n} 分`, money: `+£${n}`, income: `收入 +${n} 格`, develop: `免费开发 ${n} 次` }[md.bonusType] || '')
@@ -897,7 +897,7 @@ class GameLogic {
     // Returns { ok:true, steps:[{ key, tile, beer:[ids] }] } or
     // { ok:false, message, zh } — nothing is changed either way.
     resolveSellPlan(playerId, sellPlan) {
-        const bad = (message, zh) => ({ ok: false, message, zh: zh || message });
+        const bad = (message, zh) => ({ ok: false, message: zh || message, zh: zh || message });
         if (!Array.isArray(sellPlan) || sellPlan.length === 0) {
             return bad('Select at least one industry to sell', '请选择要出售的产业');
         }
@@ -1022,28 +1022,28 @@ class GameLogic {
                     switch (merchData.bonusType) {
                         case 'vp':
                             player.vp += merchData.bonusAmount;
-                            notes.push(`+${merchData.bonusAmount} VP (${merchData.name})`);
+                            notes.push(`+${merchData.bonusAmount} 分（${merchData.name}）`);
                             break;
                         case 'money':
                             player.money += merchData.bonusAmount;
-                            notes.push(`+£${merchData.bonusAmount} (${merchData.name})`);
+                            notes.push(`+£${merchData.bonusAmount}（${merchData.name}）`);
                             break;
                         case 'income':
                             this.state.advanceIncomeSpaces(playerId, merchData.bonusAmount);
-                            notes.push(`+${merchData.bonusAmount} income spaces (${merchData.name})`);
+                            notes.push(`收入 +${merchData.bonusAmount} 格（${merchData.name}）`);
                             break;
                         case 'develop':
                             if (options.autoResolveDevelop) {
                                 const removed = this.applyFreeDevelop(playerId, merchData.bonusAmount);
-                                if (removed.length) notes.push(`free develop: ${removed.join(', ')}`);
+                                if (removed.length) notes.push(`免费发展：${removed.join('、')}`);
                             } else {
                                 pendingDevelopBonuses += merchData.bonusAmount;
-                                notes.push(`free develop earned (${merchData.name})`);
+                                notes.push(`获得免费发展（${merchData.name}）`);
                             }
                             break;
                     }
                 } else {
-                    notes.push(`beer: ${this.beerSourceLabel(id)}`);
+                    notes.push(`啤酒：${this.beerSourceLabel(id, true, playerId)}`);
                     this.state.consumeResource(id.slice(2));
                 }
             }
@@ -1051,8 +1051,8 @@ class GameLogic {
             // Flip the tile (advances income by the tile's spaces)
             this.state.flipTile(key, tile);
 
-            let line = `Sold ${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level}`;
-            if (notes.length) line += ` [${notes.join('; ')}]`;
+            let line = `出售了 ${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level}`;
+            if (notes.length) line += `【${notes.join('；')}】`;
             results.push(line);
         }
 
@@ -1061,7 +1061,7 @@ class GameLogic {
 
         return {
             success: true,
-            message: results.join(', '),
+            message: results.join('，'),
             pendingDevelopBonuses,
         };
     }
@@ -1072,7 +1072,7 @@ class GameLogic {
 
     executeLoan(playerId, cardIndex) {
         if (!this.state.canTakeLoan(playerId)) {
-            return { success: false, message: 'A loan cannot take your income below -10' };
+            return { success: false, message: '贷款不能使收入低于 -10' };
         }
         const player = this.state.players[playerId];
         player.money += LOAN_AMOUNT;
@@ -1080,7 +1080,7 @@ class GameLogic {
 
         this.discardCard(playerId, cardIndex);
 
-        return { success: true, message: `Took £${LOAN_AMOUNT} loan (income -${LOAN_INCOME_PENALTY} levels)` };
+        return { success: true, message: `贷款 £${LOAN_AMOUNT}（收入 -${LOAN_INCOME_PENALTY} 级）` };
     }
 
     // ========================================================================
@@ -1103,7 +1103,7 @@ class GameLogic {
         const player = this.state.players[playerId];
 
         if (cardIndices.length !== 3) {
-            return { success: false, message: 'Must discard exactly 3 cards' };
+            return { success: false, message: '必须正好弃掉 3 张牌' };
         }
 
         // Remove cards in reverse index order to maintain indices
@@ -1115,11 +1115,11 @@ class GameLogic {
         // Give wild cards
         player.hand.push({
             type: CARD_TYPES.WILD_LOCATION,
-            name: 'Wild Location',
+            name: '万能地点',
         });
         player.hand.push({
             type: CARD_TYPES.WILD_INDUSTRY,
-            name: 'Wild Industry',
+            name: '万能产业',
         });
 
         player.hasWildLocation = true;
@@ -1128,7 +1128,7 @@ class GameLogic {
         this.state.wildLocationPile--;
         this.state.wildIndustryPile--;
 
-        return { success: true, message: 'Scouted: gained Wild Location + Wild Industry' };
+        return { success: true, message: '侦察：获得万能地点 + 万能产业' };
     }
 
     // ========================================================================
@@ -1137,7 +1137,7 @@ class GameLogic {
 
     executePass(playerId, cardIndex) {
         this.discardCard(playerId, cardIndex);
-        return { success: true, message: 'Passed' };
+        return { success: true, message: '跳过' };
     }
 
     // ========================================================================
@@ -1174,42 +1174,42 @@ class GameLogic {
 
     getDisabledReason(action, playerId) {
         const player = this.state.players[playerId];
-        if (player.hand.length === 0) return 'Hand is empty';
+        if (player.hand.length === 0) return '手牌为空';
 
         switch (action) {
             case ACTIONS.BUILD:
                 if (this.getValidBuildTargets(playerId).length === 0) {
-                    return 'No valid build locations';
+                    return '没有可建造的位置';
                 }
                 return null;
             case ACTIONS.NETWORK: {
                 const era = this.state.era;
-                if (era === ERA.CANAL && player.linksRemaining.canal <= 0) return 'No canal links remaining';
-                if (era === ERA.RAIL && player.linksRemaining.rail <= 0) return 'No rail links remaining';
-                if (this.getValidNetworkTargets(playerId).length === 0) return 'No valid connections available';
+                if (era === ERA.CANAL && player.linksRemaining.canal <= 0) return '运河已用完';
+                if (era === ERA.RAIL && player.linksRemaining.rail <= 0) return '铁路已用完';
+                if (this.getValidNetworkTargets(playerId).length === 0) return '没有可建造的连线';
                 return null;
             }
             case ACTIONS.DEVELOP: {
                 const ironSources = this.state.findIronSource(playerId);
-                if (ironSources.length === 0) return 'No iron available';
-                if (!this.canDevelop(playerId)) return 'No developable tiles on your mat';
+                if (ironSources.length === 0) return '没有可用的铁';
+                if (!this.canDevelop(playerId)) return '玩家板上没有可发展的板块';
                 return null;
             }
             case ACTIONS.SELL:
-                if (this.getValidSellTargets(playerId).length === 0) return 'No industries ready to sell';
+                if (this.getValidSellTargets(playerId).length === 0) return '没有可出售的产业';
                 return null;
             case ACTIONS.LOAN:
-                if (!this.state.canTakeLoan(playerId)) return 'Income too low — a loan cannot drop it below -10';
+                if (!this.state.canTakeLoan(playerId)) return '收入太低：贷款不能使收入低于 -10';
                 return null;
             case ACTIONS.SCOUT:
-                if (player.hand.length < 3) return 'Need at least 3 cards';
-                if (player.hasWildLocation || player.hasWildIndustry) return 'Already have wild cards';
-                if (this.state.wildLocationPile <= 0 || this.state.wildIndustryPile <= 0) return 'No wild cards available';
+                if (player.hand.length < 3) return '至少需要 3 张牌';
+                if (player.hasWildLocation || player.hasWildIndustry) return '已持有万能牌';
+                if (this.state.wildLocationPile <= 0 || this.state.wildIndustryPile <= 0) return '没有剩余的万能牌';
                 return null;
             case ACTIONS.PASS:
                 return null;
             default:
-                return 'Unknown action';
+                return '未知动作';
         }
     }
 

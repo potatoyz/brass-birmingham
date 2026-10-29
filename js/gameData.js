@@ -110,12 +110,12 @@ function isSellableIndustry(type) {
 
 // Industry type display info
 const INDUSTRY_DISPLAY = {
-    [INDUSTRY_TYPES.COTTON_MILL]:  { name: 'Cotton Mill',  icon: '🏭', color: '#e8d5b7', shortName: 'Cotton' },
-    [INDUSTRY_TYPES.COAL_MINE]:    { name: 'Coal Mine',    icon: '⛏️', color: '#4a4a4a', shortName: 'Coal' },
-    [INDUSTRY_TYPES.IRON_WORKS]:   { name: 'Iron Works',   icon: '🔩', color: '#d4760a', shortName: 'Iron' },
-    [INDUSTRY_TYPES.MANUFACTURER]: { name: 'Manufacturer',  icon: '📦', color: '#8b6914', shortName: 'Goods' },
-    [INDUSTRY_TYPES.POTTERY]:      { name: 'Pottery',      icon: '🏺', color: '#c0392b', shortName: 'Pottery' },
-    [INDUSTRY_TYPES.BREWERY]:      { name: 'Brewery',      icon: '🍺', color: '#d4a017', shortName: 'Beer' },
+    [INDUSTRY_TYPES.COTTON_MILL]:  { name: '棉纺厂',  icon: '🏭', color: '#e8d5b7', shortName: '棉纺' },
+    [INDUSTRY_TYPES.COAL_MINE]:    { name: '煤矿',    icon: '⛏️', color: '#4a4a4a', shortName: '煤炭' },
+    [INDUSTRY_TYPES.IRON_WORKS]:   { name: '铁厂',   icon: '🔩', color: '#d4760a', shortName: '铁' },
+    [INDUSTRY_TYPES.MANUFACTURER]: { name: '制造厂',  icon: '📦', color: '#8b6914', shortName: '制造' },
+    [INDUSTRY_TYPES.POTTERY]:      { name: '陶瓷厂',      icon: '🏺', color: '#c0392b', shortName: '陶瓷' },
+    [INDUSTRY_TYPES.BREWERY]:      { name: '酿酒厂',      icon: '🍺', color: '#d4a017', shortName: '啤酒' },
 };
 
 // ============================================================================
@@ -126,7 +126,7 @@ const INDUSTRY_DISPLAY = {
 
 const CITIES = {
     belper: {
-        name: 'Belper',
+        name: '贝尔珀',
         region: 'derbyshire',  // teal
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.MANUFACTURER],
@@ -136,7 +136,7 @@ const CITIES = {
         x: 725, y: 55
     },
     derby: {
-        name: 'Derby',
+        name: '德比',
         region: 'derbyshire',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.BREWERY],
@@ -146,7 +146,7 @@ const CITIES = {
         x: 745, y: 160
     },
     leek: {
-        name: 'Leek',
+        name: '利克',
         region: 'staffordshire',  // blue
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.MANUFACTURER],
@@ -155,7 +155,7 @@ const CITIES = {
         x: 440, y: 45
     },
     stokeOnTrent: {
-        name: 'Stoke-on-Trent',
+        name: '斯托克',
         region: 'staffordshire',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.MANUFACTURER],
@@ -165,7 +165,7 @@ const CITIES = {
         x: 310, y: 110
     },
     stone: {
-        name: 'Stone',
+        name: '斯通',
         region: 'staffordshire',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.BREWERY],
@@ -174,7 +174,7 @@ const CITIES = {
         x: 195, y: 185
     },
     uttoxeter: {
-        name: 'Uttoxeter',
+        name: '阿托克西特',
         region: 'staffordshire',
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.BREWERY],
@@ -183,7 +183,7 @@ const CITIES = {
         x: 475, y: 160
     },
     stafford: {
-        name: 'Stafford',
+        name: '斯塔福德',
         region: 'midlands',  // red/maroon
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.BREWERY],
@@ -192,7 +192,7 @@ const CITIES = {
         x: 260, y: 270
     },
     burtonOnTrent: {
-        name: 'Burton-on-Trent',
+        name: '伯顿',
         region: 'midlands',
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.COAL_MINE],
@@ -201,7 +201,7 @@ const CITIES = {
         x: 620, y: 280
     },
     cannock: {
-        name: 'Cannock',
+        name: '坎诺克',
         region: 'midlands',
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.COAL_MINE],
@@ -210,7 +210,7 @@ const CITIES = {
         x: 350, y: 355
     },
     tamworth: {
-        name: 'Tamworth',
+        name: '塔姆沃思',
         region: 'midlands',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.COAL_MINE],
@@ -219,7 +219,7 @@ const CITIES = {
         x: 635, y: 380
     },
     walsall: {
-        name: 'Walsall',
+        name: '沃尔索尔',
         region: 'midlands',
         slots: [
             [INDUSTRY_TYPES.IRON_WORKS, INDUSTRY_TYPES.MANUFACTURER],
@@ -228,7 +228,7 @@ const CITIES = {
         x: 430, y: 430
     },
     wolverhampton: {
-        name: 'Wolverhampton',
+        name: '伍尔弗汉普顿',
         region: 'blackCountry',  // brown/amber
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER],
@@ -237,7 +237,7 @@ const CITIES = {
         x: 255, y: 425
     },
     coalbrookdale: {
-        name: 'Coalbrookdale',
+        name: '科尔布鲁克代尔',
         region: 'blackCountry',
         slots: [
             [INDUSTRY_TYPES.IRON_WORKS, INDUSTRY_TYPES.BREWERY],
@@ -247,7 +247,7 @@ const CITIES = {
         x: 110, y: 455
     },
     dudley: {
-        name: 'Dudley',
+        name: '达德利',
         region: 'blackCountry',
         slots: [
             [INDUSTRY_TYPES.COAL_MINE],
@@ -256,7 +256,7 @@ const CITIES = {
         x: 295, y: 510
     },
     kidderminster: {
-        name: 'Kidderminster',
+        name: '基德明斯特',
         region: 'blackCountry',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.COAL_MINE],
@@ -265,7 +265,7 @@ const CITIES = {
         x: 195, y: 600
     },
     worcester: {
-        name: 'Worcester',
+        name: '伍斯特',
         region: 'blackCountry',
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL],
@@ -274,7 +274,7 @@ const CITIES = {
         x: 210, y: 720
     },
     birmingham: {
-        name: 'Birmingham',
+        name: '伯明翰',
         region: 'birmingham',  // purple
         slots: [
             [INDUSTRY_TYPES.COTTON_MILL, INDUSTRY_TYPES.MANUFACTURER],
@@ -285,7 +285,7 @@ const CITIES = {
         x: 530, y: 535
     },
     coventry: {
-        name: 'Coventry',
+        name: '考文垂',
         region: 'birmingham',
         slots: [
             [INDUSTRY_TYPES.POTTERY],
@@ -295,7 +295,7 @@ const CITIES = {
         x: 750, y: 565
     },
     nuneaton: {
-        name: 'Nuneaton',
+        name: '纳尼顿',
         region: 'birmingham',
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.BREWERY],
@@ -304,7 +304,7 @@ const CITIES = {
         x: 710, y: 460
     },
     redditch: {
-        name: 'Redditch',
+        name: '雷迪奇',
         region: 'birmingham',
         slots: [
             [INDUSTRY_TYPES.MANUFACTURER, INDUSTRY_TYPES.COAL_MINE],
@@ -329,11 +329,11 @@ const REGION_COLORS = {
 // ============================================================================
 const BREWERY_FARMS = {
     northern: { // Between Cannock and Walsall
-        name: 'Brewery (N)',
+        name: '酿酒厂（北）',
         x: 385, y: 390,
     },
     southern: { // Between Kidderminster and Worcester
-        name: 'Brewery (S)',
+        name: '酿酒厂（南）',
         x: 175, y: 660,
     }
 };
@@ -343,7 +343,7 @@ const BREWERY_FARMS = {
 // ============================================================================
 const MERCHANTS = {
     shrewsbury: {
-        name: 'Shrewsbury',
+        name: '什鲁斯伯里',
         slots: 1,
         minPlayers: 2,
         bonusType: 'vp',
@@ -351,7 +351,7 @@ const MERCHANTS = {
         x: 25, y: 360,
     },
     gloucester: {
-        name: 'Gloucester',
+        name: '格洛斯特',
         slots: 2,
         minPlayers: 2,
         bonusType: 'develop',
@@ -359,7 +359,7 @@ const MERCHANTS = {
         x: 75, y: 790,
     },
     oxford: {
-        name: 'Oxford',
+        name: '牛津',
         slots: 2,
         minPlayers: 2,
         bonusType: 'income',
@@ -367,7 +367,7 @@ const MERCHANTS = {
         x: 610, y: 740,
     },
     warrington: {
-        name: 'Warrington',
+        name: '沃灵顿',
         slots: 2,
         minPlayers: 3,
         bonusType: 'money',
@@ -375,7 +375,7 @@ const MERCHANTS = {
         x: 180, y: 15,
     },
     nottingham: {
-        name: 'Nottingham',
+        name: '诺丁汉',
         slots: 2,
         minPlayers: 4,
         bonusType: 'vp',
@@ -586,6 +586,28 @@ const BEER_FOR_DOUBLE_RAIL = 1;
 
 // Hand size
 const HAND_SIZE = 8;
+
+// Display name of any board location id (city, merchant or brewery farm).
+function locationName(id) {
+    return (CITIES[id] && CITIES[id].name) || (MERCHANTS[id] && MERCHANTS[id].name) ||
+        (BREWERY_FARMS[id] && BREWERY_FARMS[id].name) || id;
+}
+
+// Display name of a card, derived from its ids (never from card.name, which
+// older saved rooms store in English).
+function cardDisplayName(card) {
+    if (!card) return '';
+    if (card.type === CARD_TYPES.LOCATION) {
+        const c = CITIES[card.location];
+        return c ? c.name : (card.location || '');
+    }
+    if (card.type === CARD_TYPES.INDUSTRY && Array.isArray(card.industryTypes)) {
+        return card.industryTypes.map(t => (INDUSTRY_DISPLAY[t] ? INDUSTRY_DISPLAY[t].name : t)).join(' / ');
+    }
+    if (card.type === CARD_TYPES.WILD_LOCATION) return '万能地点';
+    if (card.type === CARD_TYPES.WILD_INDUSTRY) return '万能产业';
+    return card.name || '';
+}
 
 // ============================================================================
 // Actions per turn by player count and era

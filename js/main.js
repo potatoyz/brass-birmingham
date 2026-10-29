@@ -49,7 +49,7 @@ function renderPlayerInputs(count) {
     const container = document.querySelector('.player-name-inputs');
     container.innerHTML = '';
 
-    const defaultNames = ['Alice', 'Bob', 'Carol', 'Dave'];
+    const defaultNames = ['玩家 1', '玩家 2', '玩家 3', '玩家 4'];
 
     for (let i = 0; i < count; i++) {
         const div = document.createElement('div');
@@ -62,9 +62,9 @@ function renderPlayerInputs(count) {
                 <span>AI</span>
             </label>
             <select class="ai-difficulty-select" disabled>
-                <option value="easy">Easy</option>
-                <option value="normal" selected>Normal</option>
-                <option value="hard">Hard</option>
+                <option value="easy">简单</option>
+                <option value="normal" selected>普通</option>
+                <option value="hard">困难</option>
             </select>
         `;
         const aiCheckbox = div.querySelector('.ai-toggle-checkbox');

@@ -61,7 +61,7 @@ function applyAction(state, playerId, msg, isAI) {
             result = logic.executeBuild(playerId, t.cityId, t.slotIndex, t.industryType, cardIndex);
             if (result.success) {
                 const cityName = (CITIES[t.cityId] && CITIES[t.cityId].name) || (BREWERY_FARMS[t.cityId] && BREWERY_FARMS[t.cityId].name) || t.cityId;
-                logText = `built ${INDUSTRY_DISPLAY[t.industryType].name} in ${cityName}`;
+                logText = `在${cityName}建造了 ${INDUSTRY_DISPLAY[t.industryType].name}`;
             }
             break;
         }
@@ -75,7 +75,7 @@ function applyAction(state, playerId, msg, isAI) {
             } else {
                 result = logic.executeNetwork(playerId, pd.connectionId, cardIndex);
             }
-            if (result.success) logText = result.message.replace(/^Built /, 'built ');
+            if (result.success) logText = result.message;
             break;
         }
         case ACTIONS.DEVELOP: {
@@ -88,7 +88,7 @@ function applyAction(state, playerId, msg, isAI) {
                 if (state.findIronSource(playerId).length < 2) return fail('铁不足');
             }
             result = logic.executeDevelop(playerId, t1, t2, cardIndex);
-            if (result.success) logText = result.message.toLowerCase();
+            if (result.success) logText = result.message;
             break;
         }
         case ACTIONS.SELL: {
@@ -106,24 +106,24 @@ function applyAction(state, playerId, msg, isAI) {
                 return c;
             });
             result = logic.executeSell(playerId, clean, cardIndex, { autoResolveDevelop: !!isAI });
-            if (result.success) logText = result.message.toLowerCase();
+            if (result.success) logText = result.message;
             break;
         }
         case ACTIONS.LOAN:
             result = logic.executeLoan(playerId, cardIndex);
-            if (result.success) logText = `took £${LOAN_AMOUNT} loan`;
+            if (result.success) logText = `贷款 £${LOAN_AMOUNT}`;
             break;
         case ACTIONS.SCOUT: {
             const idx = Array.isArray(pd.scoutCards) ? pd.scoutCards.slice() : [];
             if (isInt(cardIndex) && idx.length === 2) idx.push(cardIndex);
             if (idx.length !== 3 || !idx.every(handOk) || new Set(idx).size !== 3) return fail('侦察需要选择 3 张不同的牌');
             result = logic.executeScout(playerId, idx);
-            if (result.success) logText = 'scouted (gained wild cards)';
+            if (result.success) logText = '侦察（获得万能牌）';
             break;
         }
         case ACTIONS.PASS:
             result = logic.executePass(playerId, cardIndex);
-            if (result.success) logText = 'passed';
+            if (result.success) logText = '跳过';
             break;
     }
     if (!result || !result.success) {
