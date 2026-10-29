@@ -12,7 +12,12 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '28788', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const AI_DELAY_MS = parseInt(process.env.AI_DELAY_MS || '1100', 10);
-const ROOM_TTL_MS = 7 * 24 * 3600 * 1000;
+// Room auto-close: a room with no live human connection (seated player or
+// spectator) for ROOM_IDLE_TTL_S seconds is closed and deleted (memory +
+// rooms.json). AI seats never keep a room alive. Checked every ROOM_SWEEP_MS.
+const ROOM_IDLE_TTL_MS = Math.max(1, parseFloat(process.env.ROOM_IDLE_TTL_S || '3600')) * 1000;
+const ROOM_SWEEP_MS = Math.max(50, parseInt(process.env.ROOM_SWEEP_MS || String(5 * 60 * 1000), 10));
+const BOOT_AT = Date.now();
 const MAX_ROOMS = 300;
 const ROOT = path.join(__dirname, '..');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
@@ -74,7 +79,13 @@ const server = http.createServer((req, res) => {
     const urlPath = (req.url || '/').split('?')[0];
     if (urlPath === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, rooms: rooms.size, uptime: Math.round(process.uptime()) }));
+        let active = 0;
+        for (const r of rooms.values()) if (r.emptySince == null) active++;
+        return res.end(JSON.stringify({
+            ok: true, rooms: rooms.size, activeRooms: active, idleRooms: rooms.size - active,
+            idleTtlSec: ROOM_IDLE_TTL_MS / 1000, rssMB: Math.round(process.memoryUsage().rss / 1048576),
+            uptime: Math.round(process.uptime()),
+        }));
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     try { serveStatic(req, res, urlPath); } catch (e) { notFound(res); }
@@ -110,6 +121,7 @@ function newRoom(hostToken, hostName, numSeats) {
         members: {},                // token -> { name }
         game: null,                 // GameState instance (runtime)
         version: 0, log: [], pendingBonus: null, event: null, eventSeq: 0,
+        emptySince: null,           // ms timestamp when the last human connection left (null = someone online)
     };
     room.members[hostToken] = { name: hostName };
     room.seats[0].token = hostToken;
@@ -126,6 +138,28 @@ function onlineTokens(room) {
     const s = new Set();
     for (const c of conns) if (c.code === room.code && c.token) s.add(c.token);
     return s;
+}
+function hasHumanConn(code) {
+    for (const c of conns) if (c.code === code && c.token) return true;
+    return false;
+}
+// Re-evaluate whether a room currently has any live human connection and
+// start/stop its idle clock accordingly.
+function notePresence(code) {
+    const room = code && rooms.get(code);
+    if (!room) return;
+    if (hasHumanConn(code)) {
+        if (room.emptySince != null) { room.emptySince = null; scheduleSave(); }
+    } else if (room.emptySince == null) {
+        room.emptySince = Date.now();
+        scheduleSave();
+    }
+}
+function setConnRoom(ws, code) {
+    const prev = ws.code;
+    ws.code = code;
+    if (prev && prev !== code) notePresence(prev);
+    if (code) notePresence(code);
 }
 function addLog(room, playerId, message, type = 'action') {
     room.log.unshift({ playerId, message, type });
@@ -304,7 +338,7 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         conns.delete(ws);
         const room = ws.code && rooms.get(ws.code);
-        if (room) broadcast(room);
+        if (room) { notePresence(room.code); broadcast(room); }
     });
 });
 
@@ -316,6 +350,13 @@ setInterval(() => {
     }
 }, 30000);
 
+function noRoomMsg(code) {
+    return `房间 ${code || '?'} 已关闭或不存在（房间内无人在线满 ${fmtTtl()}会自动关闭）`;
+}
+function fmtTtl() {
+    const s = ROOM_IDLE_TTL_MS / 1000;
+    return s >= 3600 && s % 3600 === 0 ? `${s / 3600} 小时` : s >= 60 && s % 60 === 0 ? `${s / 60} 分钟` : `${s} 秒`;
+}
 function err(ws, message) { send(ws, { t: 'error', message }); }
 
 function handle(ws, msg) {
@@ -332,16 +373,16 @@ function handle(ws, msg) {
         if (rooms.size >= MAX_ROOMS) return err(ws, '房间数已满，请稍后再试');
         const n = [2, 3, 4].includes(msg.seats) ? msg.seats : 4;
         const room = newRoom(ws.token, cleanName(msg.name), n);
-        ws.code = room.code;
+        setConnRoom(ws, room.code);
         touch(room, true);
         return broadcast(room);
     }
     if (msg.t === 'join') {
         const code = String(msg.code || '').toUpperCase().trim();
         const room = rooms.get(code);
-        if (!room) return send(ws, { t: 'error', message: `房间 ${code || '?'} 不存在或已过期`, code: 'noroom' });
+        if (!room) return send(ws, { t: 'error', message: noRoomMsg(code), code: 'noroom' });
         const name = cleanName(msg.name);
-        ws.code = code;
+        setConnRoom(ws, code);
         const seat = seatOf(room, ws.token);
         if (!room.members[ws.token]) room.members[ws.token] = { name };
         if (seat < 0 && room.status === 'lobby') {
@@ -354,7 +395,10 @@ function handle(ws, msg) {
     }
 
     const room = ws.code && rooms.get(ws.code);
-    if (!room) return err(ws, '你不在房间中');
+    if (!room) {
+        if (ws.code) { const c = ws.code; ws.code = null; return send(ws, { t: 'error', message: noRoomMsg(c), code: 'noroom' }); }
+        return err(ws, '你不在房间中');
+    }
     const isHost = ws.token === room.hostToken;
     const mySeat = seatOf(room, ws.token);
 
@@ -367,7 +411,7 @@ function handle(ws, msg) {
                     if (other) room.hostToken = other.token;
                 }
             }
-            ws.code = null;
+            setConnRoom(ws, null);
             touch(room, false);
             broadcast(room);
             return send(ws, { t: 'left' });
@@ -506,6 +550,10 @@ function load() {
         const arr = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
         for (const r of arr) {
             if (r.game) r.game = E.hydrate(r.game);
+            // Nobody is connected right after a restart. Keep a persisted idle
+            // clock; rooms that were active (or saved by an older version)
+            // start counting from boot.
+            if (typeof r.emptySince !== 'number') r.emptySince = BOOT_AT;
             rooms.set(r.code, r);
         }
         console.log(`loaded ${rooms.size} rooms`);
@@ -513,19 +561,40 @@ function load() {
         if (e.code !== 'ENOENT') console.error('load failed', e);
     }
 }
-function cleanup() {
+function closeRoom(room, reason) {
+    const code = room.code;
+    const t = aiTimers.get(code);
+    if (t) { clearTimeout(t); aiTimers.delete(code); }
+    for (const c of conns) {
+        if (c.code !== code) continue;
+        c.code = null;
+        send(c, { t: 'error', message: noRoomMsg(code), code: 'noroom' });
+    }
+    rooms.delete(code);
+    console.log(`[cleanup] closed room ${code} (${reason}; status=${room.status}, seats=${room.numSeats})`);
+}
+function sweepRooms() {
     const now = Date.now();
     let n = 0;
-    for (const [code, r] of rooms) {
-        if (now - r.updatedAt > ROOM_TTL_MS && ![...conns].some(c => c.code === code)) { rooms.delete(code); n++; }
+    for (const room of [...rooms.values()]) {
+        if (hasHumanConn(room.code)) { if (room.emptySince != null) { room.emptySince = null; scheduleSave(); } continue; }
+        if (room.emptySince == null) { room.emptySince = now; scheduleSave(); continue; }
+        const idle = now - room.emptySince;
+        if (idle >= ROOM_IDLE_TTL_MS) { closeRoom(room, `no human online for ${Math.round(idle / 1000)}s`); n++; }
     }
-    if (n) { console.log(`cleaned ${n} idle rooms`); scheduleSave(); }
+    if (n) {
+        if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+        saveNow();
+        console.log(`[cleanup] closed ${n} idle room(s); ${rooms.size} left, rss ${Math.round(process.memoryUsage().rss / 1048576)}MB`);
+    }
+    return n;
 }
 
 load();
-cleanup();
+sweepRooms();
 for (const r of rooms.values()) scheduleAI(r);
-setInterval(cleanup, 3600 * 1000);
+setInterval(sweepRooms, ROOM_SWEEP_MS).unref();
+console.log(`[cleanup] room idle sweeper started: close after ${ROOM_IDLE_TTL_MS / 1000}s with no human online, check every ${ROOM_SWEEP_MS / 1000}s; ${rooms.size} rooms loaded`);
 
 function shutdown() { if (saveTimer) clearTimeout(saveTimer); saveNow(); process.exit(0); }
 process.on('SIGTERM', shutdown);
