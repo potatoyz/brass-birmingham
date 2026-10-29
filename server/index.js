@@ -163,7 +163,7 @@ function setConnRoom(ws, code) {
     if (code) notePresence(code);
 }
 function addLog(room, playerId, message, type = 'action') {
-    room.log.unshift({ playerId, message, type });
+    room.log.unshift({ playerId, message, type, ts: Date.now() });
     if (room.log.length > 150) room.log.length = 150;
 }
 

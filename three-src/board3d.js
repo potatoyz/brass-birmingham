@@ -546,6 +546,20 @@ export class Board3D {
         }
         this.controls.update();
         this.dirty = true;
+        if (this.onResetView) this.onResetView();
+    }
+
+    // client-space bounding box of the board slab at the current camera
+    boardRect() {
+        this.camera.updateMatrixWorld();
+        const r = this.renderer.domElement.getBoundingClientRect(), h2 = S / 2, v = new Vector3();
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        for (const [cx, cz] of [[-h2, -h2], [h2, -h2], [-h2, h2], [h2, h2]]) {
+            v.set(cx, 0, cz).project(this.camera);
+            const px = r.left + (v.x + 1) / 2 * r.width, py = r.top + (1 - v.y) / 2 * r.height;
+            x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+        }
+        return { left: x0, right: x1, top: y0, bottom: y1 };
     }
 
     clampTarget() {

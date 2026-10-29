@@ -31,5 +31,10 @@ export const ICON = {
     eraser: svg('<path d="M8.5 20H20"/><path d="M4.6 15.4l9.9-9.9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H8.2z"/><path d="M9.5 10.5l5 5"/>'),
     trash: svg('<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
     pin: svg('<path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/>'),
+    spent: svg('<circle cx="9" cy="12" r="6.5" fill="#f5c542" stroke="#7a5212" stroke-width="1.4"/><path d="M15.5 12h7M19.5 9l3 3-3 3" stroke="#ff8a6a"/>'),
+    order: svg('<path d="M4 6h10M4 12h7M4 18h4"/><path d="M18 5v14M15 16l3 3 3-3"/>'),
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+    hourglass: svg('<path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     menu: svg('<path d="M4 6h16M4 12h16M4 18h16"/>'),
 };

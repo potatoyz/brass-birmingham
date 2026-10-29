@@ -7,6 +7,7 @@ import { ICON } from './icons.js';
 import { Annotator } from './annot.js';
 
 const $ = s => document.querySelector(s);
+const hhmm = ts => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STEM = { cottonMill: 'cotton', coalMine: 'coal', ironWorks: 'iron', manufacturer: 'goods', pottery: 'pottery', brewery: 'brewery' };
 const ORDER = ['cottonMill', 'coalMine', 'ironWorks', 'manufacturer', 'pottery', 'brewery'];
@@ -290,6 +291,7 @@ class App {
             });
             window.__bb3d = this;
             this.annot.attach(this.board);
+            this.board.onResetView = () => this.placeInfo();
             this.layoutInsets();
             window.addEventListener('resize', () => { this.layoutInsets(); clearTimeout(this.rsT); this.rsT = setTimeout(() => this.board.resetView(), 150); });
         }
@@ -350,7 +352,7 @@ class App {
     refresh() {
         if (!this.state) return;
         this.renderTop(); this.renderHud(); this.renderPlayers(); this.renderMarkets(); this.renderMat();
-        this.renderHand(); this.renderActions(); this.renderPanel(); this.renderLog();
+        this.renderHand(); this.renderActions(); this.renderPanel(); this.renderLog(); this.renderInfo();
         if (this.modalKind === 'board' && !$('#modal').hidden) this.openBoardModal(this.boardPid);
         this.updateHighlights();
         if (this.board) this.layoutInsets();
@@ -373,7 +375,7 @@ class App {
         hud.classList.toggle('spec', !p);
         const cur = s.currentPlayerId === this.me && this.msg.room.status === 'playing';
         hud.classList.toggle('cur', !!cur);
-        if (!p) { $('#hud-badge').innerHTML = '<span class="muted">观战中</span>'; $('#hud-money b').textContent = '—'; $('#hud-income b').textContent = '—'; $('#hud-vp b').textContent = '—'; $('#hud-acts').innerHTML = ''; return; }
+        if (!p) { $('#hud-badge').innerHTML = '<span class="muted">观战中</span>'; $('#hud-money b').textContent = '—'; $('#hud-income b').textContent = '—'; $('#hud-vp b').textContent = '—'; $('#hud-spent b').textContent = '—'; $('#hud-acts').innerHTML = ''; return; }
         hud.style.setProperty('--pc', PLAYER_CSS[this.me]);
         $('#hud-badge').innerHTML = `${ownerBadge(p, this.me)}<span class="hud-name">${esc(p.name)}</span>`;
         const mb = $('#hud-money b');
@@ -382,6 +384,7 @@ class App {
         $('#hud-income b').textContent = (inc > 0 ? '+' : '') + inc;
         $('#hud-income').classList.toggle('neg', inc < 0);
         $('#hud-vp b').textContent = p.vp;
+        $('#hud-spent b').textContent = '£' + ((s.moneySpentThisRound || {})[this.me] || 0);
         const left = cur ? s.actionsPerTurn - s.actionsThisTurn : 0;
         const total = s.actionsPerTurn || 2;
         $('#hud-acts').innerHTML = cur ? `${ic('actions')}${Array.from({ length: total }, (_, i) => `<i class="pip${i < left ? ' on' : ''}"></i>`).join('')}` : '';
@@ -397,8 +400,9 @@ class App {
             const p = s.players[pid], seat = this.msg.room.seats[pid] || {};
             const cur = pid === s.currentPlayerId && this.msg.room.status === 'playing';
             const off = seat.human && !seat.online;
-            return `<button class="opp${cur ? ' cur' : ''}${off ? ' off' : ''}${this.focusPid === pid ? ' focus' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="${esc(p.name)}${p.isAI ? '（AI）' : ''}${off ? '（离线）' : ''}：悬停只看 TA 的资产，点击看详情">
-              ${ownerBadge(p, pid)}<span class="on">${esc(p.name)}</span><span class="om">£${this.hold[pid] ?? p.money}</span><span class="ov">${ic('vp')}${p.vp}</span>${cur ? '<i class="turnmark" title="正在行动"></i>' : ''}</button>`;
+            const st = this.turnStatus(pid), sp = (s.moneySpentThisRound || {})[pid] || 0;
+            return `<button class="opp${cur ? ' cur' : ''}${off ? ' off' : ''}${st === 'done' ? ' done' : ''}${this.focusPid === pid ? ' focus' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="${esc(p.name)}${p.isAI ? '（AI）' : ''}${off ? '（离线）' : ''}：本轮第 ${order.indexOf(pid) + 1} 个行动${st === 'done' ? '（已行动）' : ''}，本轮花费 £${sp}。悬停只看 TA 的资产，点击看详情">
+              <b class="oi c-only">${order.indexOf(pid) + 1}</b>${ownerBadge(p, pid)}<span class="on">${esc(p.name)}</span><span class="om">£${this.hold[pid] ?? p.money}</span><span class="ov">${ic('vp')}${p.vp}</span><span class="osp c-only" data-sp="${pid}" title="本轮花费">${ic('spent')}${sp}</span>${st === 'done' ? `<span class="odone c-only">${ic('check')}</span>` : ''}${cur ? '<i class="turnmark" title="正在行动"></i>' : ''}</button>`;
         }).join('');
         box.querySelectorAll('.opp').forEach(el => {
             el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
@@ -601,11 +605,95 @@ class App {
         }
     }
 
+    // Turn status of a player in the current round: done / cur / wait.
+    turnStatus(pid) {
+        const s = this.state, order = s.turnOrder && s.turnOrder.length ? s.turnOrder : s.players.map((_, i) => i);
+        if (this.msg.room.status !== 'playing') return 'done';
+        const i = order.indexOf(pid);
+        return i < s.currentPlayerIndex ? 'done' : i === s.currentPlayerIndex ? 'cur' : 'wait';
+    }
+
+    // Side panels (wide screens only): this round + log on the left, next round on the right.
+    placeInfo() {
+        if (!this.board) return;
+        const W = window.innerWidth, H = window.innerHeight, r = this.board.boardRect();
+        const box = el => { const b = $(el).getBoundingClientRect(); return b.width ? b : null; };
+        const hud = box('#hud'), side = box('#side-right'), opps = box('#opps'), tb = box('#toolbar');
+        const gap = 14, minW = 230, maxW = 290;
+        const lAvail = r.left - gap - 64, rAvail = (side ? side.left : W) - gap - r.right - gap;
+        const wide = W >= 900 && lAvail >= minW && rAvail >= minW && r.bottom - r.top > 360;
+        document.body.classList.toggle('wide-info', wide);
+        $('#info-l').hidden = $('#info-r').hidden = !wide;
+        this.infoWide = wide;
+        if (!wide) { this.renderLog(); this.renderPlayers(); return; }
+        const over = (b, x0, x1) => b && x0 < b.right && x1 > b.left;
+        const lw = Math.min(maxW, lAvail), lx = Math.round(r.left - gap - lw);
+        let lt = Math.max(10, r.top);
+        for (const b of [hud, opps]) if (over(b, lx, lx + lw)) lt = Math.max(lt, b.bottom + 10);
+        const lb = Math.max(lt + 320, r.bottom);
+        Object.assign($('#info-l').style, { left: lx + 'px', width: lw + 'px', top: Math.round(lt) + 'px', height: Math.round(Math.min(H - 10, lb) - lt) + 'px' });
+        const rw = Math.min(maxW, rAvail), rx = Math.round(r.right + gap);
+        let rt = Math.max(10, r.top);
+        for (const b of [tb, opps]) if (over(b, rx, rx + rw)) rt = Math.max(rt, b.bottom + 10);
+        Object.assign($('#info-r').style, { left: rx + 'px', width: rw + 'px', top: Math.round(rt) + 'px', maxHeight: Math.round(H - rt - 10) + 'px' });
+        $('#log-dock').dataset.key = '';
+        this.renderInfo(); this.renderLog(); this.renderPlayers();
+    }
+
+    renderInfo() {
+        const s = this.state; if (!s || !this.msg) return;
+        const order = s.turnOrder && s.turnOrder.length ? s.turnOrder : s.players.map((_, i) => i);
+        const spent = pid => (s.moneySpentThisRound || {})[pid] || 0;
+        // the rule (GameState.endRound): stable sort of the current order by money spent, least first
+        const next = [...order].sort((a, b) => spent(a) - spent(b));
+        this.roundInfo = { order: [...order], next, spent: order.map(spent), status: order.map(pid => this.turnStatus(pid)) };
+        const prev = this.prevSpent || {}; this.prevSpent = Object.fromEntries(order.map(pid => [pid, spent(pid)]));
+        if (!document.body.classList.contains('wide-info')) { this.bumpSpent(prev); return; }
+        const total = s.actionsPerTurn || 2;
+        const row = (pid, i, extra) => {
+            const p = s.players[pid], st = this.turnStatus(pid);
+            return `<div class="ir st-${st}${pid === this.me ? ' me' : ''}" data-pid="${pid}" style="--pc:${PLAYER_CSS[pid]}"><b class="ix">${i + 1}</b>${ownerBadge(p, pid)}<span class="nm">${esc(p.name)}</span>${extra(pid, st)}</div>`;
+        };
+        $('#round-box').innerHTML = `<div class="ih">${ic('order')}本轮<span class="muted">第 ${s.round} 轮</span></div>` + order.map((pid, i) => row(pid, i, (pid, st) => {
+            const left = st === 'cur' ? total - s.actionsThisTurn : st === 'wait' ? total : 0;
+            const stt = st === 'done' ? `<span class="stt" title="已行动">${ic('check')}</span>`
+                : st === 'cur' ? `<span class="stt" title="正在行动，还剩 ${left} 个动作">${Array.from({ length: total }, (_, k) => `<i class="pip${k < left ? ' on' : ''}"></i>`).join('')}</span>`
+                : `<span class="stt" title="等待中，${left} 个动作">${ic('hourglass')}${left}</span>`;
+            return `${stt}<span class="sp" data-sp="${pid}" title="本轮已花费">£${spent(pid)}</span>`;
+        })).join('') + `<div class="ifoot">${ic('spent')} 本轮花费，花得少的下轮先动</div>`;
+        $('#next-box').innerHTML = `<div class="ih">${ic('order')}下轮顺位<span class="muted">预测</span></div>` + next.map((pid, i) => {
+            const p = s.players[pid], d = order.indexOf(pid) - i, inc = incomeLevelFromSpace(p.incomeSpace);
+            return `<div class="nr${pid === this.me ? ' me' : ''}" data-pid="${pid}" style="--pc:${PLAYER_CSS[pid]}">
+              <div class="nr1"><b class="ix">${i + 1}</b>${ownerBadge(p, pid)}<span class="nm">${esc(p.name)}</span>${d ? `<span class="mv ${d > 0 ? 'up' : 'dn'}" title="${d > 0 ? '比本轮提前' : '比本轮推后'} ${Math.abs(d)} 位">${d > 0 ? '▲' : '▼'}${Math.abs(d)}</span>` : ''}<span class="sp" data-sp="${pid}" title="本轮已花费">£${spent(pid)}</span></div>
+              <div class="nr2"><span title="资金">${ic('coin')}${this.hold[pid] ?? p.money}</span><span title="收入"${inc < 0 ? ' class="neg"' : ''}>${ic('income')}${inc > 0 ? '+' : ''}${inc}</span><span title="胜利点">${ic('vp')}${p.vp}</span><span title="手牌">${ic('cards')}${p.hand.length}</span></div></div>`;
+        }).join('');
+        document.querySelectorAll('#info-l [data-pid], #info-r [data-pid]').forEach(el => {
+            el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
+            el.onmouseleave = () => this.board && this.board.setFocus(this.focusPid ?? null);
+            el.onclick = () => this.playerModal(+el.dataset.pid);
+        });
+        this.bumpSpent(prev);
+    }
+    bumpSpent(prev) {
+        for (const [pid, v] of Object.entries(this.prevSpent || {})) {
+            if (prev[pid] == null || prev[pid] === v) continue;
+            document.querySelectorAll(`[data-sp="${pid}"]`).forEach(el => { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); });
+        }
+    }
+
     renderLog() {
         const s = this.state;
-        const line = e => { const p = e.playerId != null ? s.players[e.playerId] : null; return `<div class="le ${e.type || ''}">${p ? `${ownerBadge(p, e.playerId)}` : ''}<span>${esc(e.message)}</span></div>`; };
-        const log = this.msg.log || [];
-        $('#log').innerHTML = `<div class="log-h">日志 <button class="mini" data-close>${ic('close')}</button></div>` + log.slice(0, 60).map(line).join('');
+        const line = e => { const p = e.playerId != null ? s.players[e.playerId] : null; return `<div class="le ${e.type || ''}">${e.ts ? `<time>${hhmm(e.ts)}</time>` : ''}${p ? `${ownerBadge(p, e.playerId)}` : ''}<span>${esc(e.message)}</span></div>`; };
+        const log = this.msg.log || [];   // newest first (server unshifts)
+        $('#log').innerHTML = `<div class="log-h">日志 <button class="mini" data-close>${ic('close')}</button></div>` + log.slice(0, 100).map(line).join('');
+        const dock = $('#log-dock');
+        if (document.body.classList.contains('wide-info')) {
+            const key = `${log.length}|${log[0] && (log[0].ts || log[0].message)}`;
+            if (dock.dataset.key !== key) {
+                dock.dataset.key = key;
+                dock.innerHTML = `<div class="ih">${ic('log')}日志</div><div class="lscroll">${log.slice(0, 100).map(line).join('') || '<div class="le muted">对局开始</div>'}</div>`;
+            }
+        } else if (dock.dataset.key) { dock.dataset.key = ''; dock.innerHTML = ''; }
         $('#log [data-close]').onclick = () => document.body.classList.remove('show-log');
         $('#ticker').innerHTML = log.slice(0, 2).map(line).join('') + (log.length ? '' : '<div class="le muted">对局开始</div>');
     }
