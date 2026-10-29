@@ -466,6 +466,18 @@ class GameLogic {
         const hadLink = this.state.boardLinks[firstConnId];
         this.state.boardLinks[firstConnId] = { playerId, type: 'rail' };
 
+        // Also take the first link's coal (as executeNetworkDouble does), so a
+        // mine's last cube is not offered to both links.
+        let restoreCoal = null;
+        const coal1 = this.findCheapestCoalForLink(firstConn, playerId);
+        const coal1Cost = coal1 && !coal1.free ? coal1.price : 0;
+        if (coal1 && coal1.type === 'mine') {
+            const tile = this.state.boardIndustries[coal1.key];
+            tile.resourceCubes--; restoreCoal = () => tile.resourceCubes++;
+        } else if (coal1 && this.state.coalMarket > 0) {
+            this.state.coalMarket--; restoreCoal = () => this.state.coalMarket++;
+        }
+
         const targets = [];
         try {
             for (const conn of CONNECTIONS) {
@@ -488,6 +500,10 @@ class GameLogic {
                 const beer = this.findBeerForLink(playerId, conn);
                 if (!beer) continue;
 
+                // Both links' coal plus £15 must be affordable.
+                const coal2Cost = coalSource.free ? 0 : coalSource.price;
+                if (RAIL_DOUBLE_LINK_COST + coal1Cost + coal2Cost > player.money) continue;
+
                 targets.push({
                     connectionId: conn.id,
                     cities: conn.cities,
@@ -495,6 +511,7 @@ class GameLogic {
                 });
             }
         } finally {
+            if (restoreCoal) restoreCoal();
             if (hadLink) this.state.boardLinks[firstConnId] = hadLink;
             else delete this.state.boardLinks[firstConnId];
         }
