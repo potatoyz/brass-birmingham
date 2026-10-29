@@ -701,7 +701,7 @@ export class Board3D {
     dropTile(key, delay = 0) {
         const g = this.tileGroup(key); if (!g) return Promise.resolve();
         const y0 = g.position.y; g.visible = false;
-        return this.animate(560, k => {
+        return this.animate(750, k => {
             g.visible = true;
             g.position.y = y0 + 3.2 * (1 - bounce(k));
             g.rotation.y = (1 - k) * 0.35;
@@ -717,7 +717,7 @@ export class Board3D {
             d.userData.dir = [Math.cos(i / 10 * Math.PI * 2 + Math.random() * 0.4), Math.sin(i / 10 * Math.PI * 2 + Math.random() * 0.4)];
             this.gFx.add(d); parts.push(d);
         }
-        return this.animate(520, k => {
+        return this.animate(600, k => {
             const e = easeOut(k);
             ring.scale.setScalar(0.6 + 1.8 * e); ring.material.opacity = 0.9 * (1 - k);
             for (const d of parts) {
@@ -734,7 +734,7 @@ export class Board3D {
         const bands = parts.filter(g => g.name === 'linkBand').flatMap(g => g.children);
         const tiles = parts.filter(g => g.name === 'linkTile');
         bands.forEach(m => m.geometry.setDrawRange(0, 0)); tiles.forEach(t => { t.visible = false; });
-        return this.animate(650, k => {
+        return this.animate(850, k => {
             for (const m of bands) { const n = m.geometry.index.count; m.geometry.setDrawRange(0, k >= 1 ? Infinity : Math.floor(n * easeInOut(Math.min(1, k / 0.75)) / 6) * 6); }
             for (const t of tiles) { t.visible = k > 0.55; const q = Math.max(0, (k - 0.55) / 0.45); t.scale.setScalar(0.4 + 0.6 * back(q)); }
         }, delay).then(() => { const p = this.linkWorld(connId); if (p) this.impact(p.setY(0.05), PLAYER_HEX[parts[0].userData.playerId]); });
@@ -744,7 +744,7 @@ export class Board3D {
         const g = this.tileGroup(key); if (!g) return Promise.resolve();
         const y0 = g.position.y;
         g.rotation.z = Math.PI;
-        return this.animate(620, k => {
+        return this.animate(850, k => {
             const e = easeInOut(k);
             g.rotation.z = Math.PI * (1 - e); g.position.y = y0 + Math.sin(Math.PI * k) * 0.9;
         }, delay).then(() => this.impact(g.position.clone().setY(0.05), 0xffe08a));
@@ -757,7 +757,7 @@ export class Board3D {
         else m = new Mesh(new BoxGeometry(0.22, 0.22, 0.22), this.mat(kind === 'coal' ? 0x1d1d1d : 0xe07a2c, { emissive: kind === 'coal' ? 0x222222 : 0x331100 }));
         m.visible = false; this.gFx.add(m);
         const h = 1.4 + from.distanceTo(to) * 0.18;
-        return this.animate(520, k => {
+        return this.animate(650, k => {
             m.visible = k < 1;
             const e = easeInOut(k);
             m.position.lerpVectors(from, to, e); m.position.y += Math.sin(Math.PI * e) * h;

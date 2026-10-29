@@ -233,22 +233,23 @@ body.show-log .log{display:block}
 /* ---- animation overlay (never takes clicks) ---- */
 #fx-layer{position:fixed;inset:0;pointer-events:none;z-index:35;overflow:hidden}
 #fx-layer *{pointer-events:none}
-.fx-float{position:absolute;transform:translate(-50%,0);font-weight:800;font-size:20px;white-space:nowrap;text-shadow:0 2px 0 #000,0 0 8px #000;animation:floatUp 1.3s ease-out forwards}
-.fx-float.under{animation-name:floatDown}
-.fx-float.up{color:#9ff0b0}.fx-float.down{color:#ffab9c}.fx-float.vp{color:#ffe08a}.fx-float.dev{color:#c9d8ff;font-size:16px}
+.fx-float{position:absolute;transform:translate(-50%,0);font-weight:800;font-size:22px;white-space:nowrap;-webkit-text-stroke:1px rgba(0,0,0,0.9);text-shadow:0 1px 2px #000,0 0 6px #000,0 0 12px rgba(0,0,0,0.9);filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8));animation:floatUp 2.5s ease-out forwards}
+.fx-float.under{animation-name:floatUp}
+.fx-float.off-mode{animation-name:floatUpOff;animation-duration:1.5s}
+.fx-float.up{color:#9ff0b0}.fx-float.down{color:#ffab9c}.fx-float.vp{color:#ffe08a}.fx-float.dev{color:#c9d8ff;font-size:20px}
 .fx-float.bonus{color:#ffd77a}.fx-float.big{font-size:26px}
-@keyframes floatUp{0%{opacity:0;transform:translate(-50%,8px) scale(.7)}15%{opacity:1;transform:translate(-50%,0) scale(1.1)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,-46px) scale(1)}}
-@keyframes floatDown{0%{opacity:0;transform:translate(-50%,-6px) scale(.7)}15%{opacity:1;transform:translate(-50%,0) scale(1.1)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,26px)}}
-.fx-card{position:absolute;width:52px;height:76px;border-radius:6px;background:linear-gradient(135deg,#6b4d2a,#3a2a18);border:2px solid var(--brass2);box-shadow:0 4px 12px #000a;animation:cardOut .7s ease-in forwards}
+@keyframes floatUp{0%{opacity:0;transform:translate(-50%,4px) scale(.92)}8%{opacity:1;transform:translate(-50%,0) scale(1.04)}14%{opacity:1;transform:translate(-50%,0) scale(1)}80%{opacity:1;transform:translate(-50%,-14px) scale(1)}100%{opacity:0;transform:translate(-50%,-18px) scale(.98)}}
+@keyframes floatUpOff{0%{opacity:0;transform:translate(-50%,2px) scale(.95)}10%{opacity:1;transform:translate(-50%,0) scale(1)}75%{opacity:1;transform:translate(-50%,-10px) scale(1)}100%{opacity:0;transform:translate(-50%,-14px) scale(.98)}}
+.fx-card{position:absolute;width:52px;height:76px;border-radius:6px;background:linear-gradient(135deg,#6b4d2a,#3a2a18);border:2px solid var(--brass2);box-shadow:0 4px 12px #000a;animation:cardOut .9s ease-in forwards}
 @keyframes cardOut{0%{opacity:1;transform:none}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(25deg) scale(.6)}}
-.fx-ghost{position:absolute;border-radius:6px;animation:ghostOut .8s ease-in forwards}
+.fx-ghost{position:absolute;border-radius:6px;animation:ghostOut 1.1s ease-in forwards}
 @keyframes ghostOut{to{opacity:0;transform:translate(-40px,-30px) scale(.4) rotate(-20deg)}}
-.mtile.fx-flash{animation:flash .8s ease-out}
+.mtile.fx-flash{animation:flash 1.1s ease-out}
 @keyframes flash{0%{box-shadow:0 0 0 0 #c9d8ff}40%{box-shadow:0 0 18px 4px #c9d8ff}100%{box-shadow:none}}
 .fx-turn{position:absolute;left:50%;top:22%;transform:translate(-50%,0);display:flex;align-items:center;gap:6px;padding:8px 22px;border-radius:30px;background:#18120cee;border:2px solid var(--pc);font-size:20px;font-weight:700;box-shadow:0 0 24px color-mix(in srgb,var(--pc) 60%,transparent);animation:turnIn 1.1s ease-out forwards}
 .fx-turn.mine{font-size:34px;color:var(--brass2);border-color:var(--brass2);padding:12px 36px;animation-duration:1.5s}
 @keyframes turnIn{0%{opacity:0;transform:translate(-50%,-14px) scale(.85)}15%{opacity:1;transform:translate(-50%,0) scale(1.04)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-8px)}}
-@media (prefers-reduced-motion:reduce){.fx-card,.fx-ghost{display:none}.fx-float{animation-duration:.8s!important}.fx-turn{animation-duration:.8s!important}.mtile.can,.turnmark{animation:none}}
+@media (prefers-reduced-motion:reduce){.fx-card,.fx-ghost{display:none}.fx-float{animation-duration:2s!important}.fx-turn{animation-duration:.8s!important}.mtile.can,.turnmark{animation:none}}
 
 /* ---- medium ---- */
 @media (max-width:1400px) and (min-width:900px){.opps{max-width:calc(100% - 250px - 300px)}.opp .on{max-width:56px}}
