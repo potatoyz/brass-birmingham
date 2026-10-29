@@ -4,6 +4,16 @@
   "private": true,
   "description": "Online multiplayer rooms for the Brass: Birmingham fan adaptation",
   "main": "server/index.js",
-  "scripts": { "start": "node server/index.js", "test": "node test/online-test.js" },
-  "dependencies": { "ws": "^8.18.0" }
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node test/online-test.js",
+    "build:three": "sh scripts/build-three.sh"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "three": "^0.185.0"
+  }
 }
