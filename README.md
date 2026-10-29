@@ -2,9 +2,7 @@
 
 **Brass: Birmingham 3D Online** —— 用 three.js 重写的《工业革命：伯明翰》网页联机版（非官方粉丝作品）
 
-- 🌿 **代码分支**：3D 版的全部代码在 [`three` 分支](https://github.com/potatoyz/brass-birmingham/tree/three)；`main` 分支是联机 + 中文化后的经典 2D 版。
-
-本项目 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)（单机同屏的 2D 网页版）。在保留它的规则引擎的前提下，加了服务端联机房间，做了全量简体中文化，并重写了一套 3D 前端。3D 前端专门针对“看清版图、点得准、知道为什么不能点”这几个实际痛点设计。
+本项目 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)（单机同屏的网页版）。在保留它的规则引擎的前提下，加了服务端联机房间，做了全量简体中文化，并重写了一套 3D 前端。3D 前端专门针对“看清版图、点得准、知道为什么不能点”这几个实际痛点设计。
 
 <p align="center">
   <img src="docs/images/3d-overview.jpg" alt="4 人局：左上角大号金币、顶部对手条、右侧下一块产业" width="100%">
@@ -159,9 +157,9 @@
 
 | 方面 | 上游 npow/brass-birmingham | 本项目（3D 版联机伯明翰） |
 |---|---|---|
-| 游玩方式 | 单机同屏轮流 | 多设备联机房间（保留同屏模式，在经典版中） |
+| 游玩方式 | 单机同屏轮流 | 多设备联机房间 |
 | 规则执行 | 浏览器本地 | 服务端权威，同一份引擎前后端共用 |
-| 版图 | 2D SVG 平面版图 | three.js 3D 桌面 + 受限俯视镜头（经典 2D 版仍保留） |
+| 版图 | SVG 平面版图 | three.js 3D 桌面 + 受限俯视镜头 |
 | 操作 | 选动作 → 弹窗组合列表 → 选弃牌 | 先牌后位置 / 先位置后牌，版图高亮 → 面板汇总 → 确认 |
 | 不可用原因 | 笼统提示 | 规则引擎逐项判定，给出带数字的原因；“只能贷款/侦察/跳过”提示 |
 | 连线显示 | 两城直线 | 沿印刷线路的折线，农场支线并入同一条 |
@@ -204,11 +202,8 @@ flowchart LR
 
 ## 目录结构
 
-（`three` 分支）
-
 ```
 index.html                3D 版入口（加载规则引擎 + bb3d.min.js）
-classic.html              经典 2D 界面（上游 UI + 联机/中文化改动）
 three-src/
   app.js                  大厅、对局界面、点选确认流程、原因判定、产业板
   board3d.js              three.js 场景：版图、板块、连线、市场、高亮、镜头、动画
@@ -220,12 +215,10 @@ three-src/
 js/
   gameData.js gameState.js gameLogic.js aiPlayer.js   规则引擎（前后端共用）
   three/bb3d.min.js       3D 前端打包产物
-  online.js uiManager.js boardRenderer.js ...          经典 2D 版
 css/three.css             3D 版样式
 assets/
   board.jpg               中文版图
   cards/                  中文卡牌
-  tiles/<kind>-<n>.jpg    经典版板块
   tiles/{purple,yellow,orange,teal}/   3D 版四色板块与船/火车
 server/
   index.js                HTTP + WebSocket 房间服务器、持久化、AI 调度
@@ -247,11 +240,11 @@ docs/images/              README 截图
 需要 Node.js 18 及以上。
 
 ```bash
-git clone -b three https://github.com/potatoyz/brass-birmingham.git
+git clone https://github.com/potatoyz/brass-birmingham.git
 cd brass-birmingham
 npm install
-npm start                 # 默认 http://0.0.0.0:28788
-# 打开 http://localhost:28788 进入 3D 版；/classic.html 为经典 2D 版
+npm start                 # 默认监听 0.0.0.0:28789
+# 浏览器打开 http://localhost:28789
 ```
 
 修改 `three-src/` 后需要重新打包：
@@ -263,7 +256,7 @@ npm run build:three       # 输出 js/three/bb3d.min.js
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `HOST` | `0.0.0.0` | 监听地址 |
-| `PORT` | `28788` | 网页与 WebSocket（`/ws`）共用端口 |
+| `PORT` | `28789` | 网页与 WebSocket（`/ws`）共用端口 |
 | `DATA_DIR` | `./data` | 房间存档目录（`rooms.json`） |
 | `AI_DELAY_MS` | `1100` | AI 每步之间的延迟（毫秒） |
 
@@ -295,7 +288,7 @@ ReadWritePaths=/var/lib/<app>
 WantedBy=multi-user.target
 ```
 
-把 `index.html classic.html css js assets server package*.json` 复制到应用目录，执行 `npm install --omit=dev`，再 `systemctl enable --now`。更新前建议先备份旧文件；服务重启后房间会从 `rooms.json` 恢复。服务只提供 HTTP/WS，需要 HTTPS 时请在前面加反向代理，并转发 `/ws` 的 WebSocket。别忘了在防火墙/安全组放行端口。
+把 `index.html css js assets server package*.json` 复制到应用目录，执行 `npm install --omit=dev`，再 `systemctl enable --now`。更新前建议先备份旧文件；服务重启后房间会从 `rooms.json` 恢复。服务只提供 HTTP/WS，需要 HTTPS 时请在前面加反向代理，并转发 `/ws` 的 WebSocket。别忘了在防火墙/安全组放行端口。
 
 ## 测试
 

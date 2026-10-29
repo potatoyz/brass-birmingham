@@ -9,7 +9,7 @@ const { WebSocketServer } = require('ws');
 const E = require('./engine');
 
 const HOST = process.env.HOST || '0.0.0.0';
-const PORT = parseInt(process.env.PORT || '28788', 10);
+const PORT = parseInt(process.env.PORT || '28789', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const AI_DELAY_MS = parseInt(process.env.AI_DELAY_MS || '1100', 10);
 // Room auto-close: a room with no live human connection (seated player or
