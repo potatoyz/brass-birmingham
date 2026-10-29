@@ -7,6 +7,7 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const E = require('./engine');
+const Annot = require('./annot');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '28789', 10);
@@ -391,7 +392,9 @@ function handle(ws, msg) {
             if (free >= 0) { room.seats[free].token = ws.token; room.seats[free].name = name; }
         }
         touch(room, false);
-        return broadcast(room);
+        broadcast(room);
+        // current (unexpired) annotations for late joiners / reconnects
+        return send(ws, { t: 'annots', strokes: Annot.snapshot(code, ws.token) });
     }
 
     const room = ws.code && rooms.get(ws.code);
@@ -401,6 +404,14 @@ function handle(ws, msg) {
     }
     const isHost = ws.token === room.hostToken;
     const mySeat = seatOf(room, ws.token);
+
+    if (msg.t === 'annot') {
+        const name = mySeat >= 0 && room.game ? room.game.players[mySeat].name : ((room.members[ws.token] || {}).name || '观众');
+        return Annot.handle({
+            room, ws, seat: mySeat, name,
+            sendTo: mk => { for (const c of conns) if (c.code === room.code) send(c, mk(c)); },
+        }, msg);
+    }
 
     switch (msg.t) {
         case 'leave': {
@@ -488,6 +499,7 @@ function handle(ws, msg) {
         case 'restart': { // back to lobby after a finished game
             if (!isHost || room.status !== 'ended') return;
             room.status = 'lobby'; room.game = null; room.event = null; room.pendingBonus = null; room.log = [];
+            Annot.drop(room.code);
             touch(room, true); return broadcast(room);
         }
         case 'action': {
@@ -571,6 +583,7 @@ function closeRoom(room, reason) {
         send(c, { t: 'error', message: noRoomMsg(code), code: 'noroom' });
     }
     rooms.delete(code);
+    Annot.drop(code);
     console.log(`[cleanup] closed room ${code} (${reason}; status=${room.status}, seats=${room.numSeats})`);
 }
 function sweepRooms() {
@@ -594,6 +607,14 @@ load();
 sweepRooms();
 for (const r of rooms.values()) scheduleAI(r);
 setInterval(sweepRooms, ROOM_SWEEP_MS).unref();
+// drop expired annotations (memory only) once a minute
+setInterval(() => {
+    for (const [code, s] of Annot.store) {
+        if (!rooms.has(code)) { Annot.drop(code); continue; }
+        Annot.prune(s);
+        if (!s.strokes.size) Annot.drop(code);
+    }
+}, 60 * 1000).unref();
 console.log(`[cleanup] room idle sweeper started: close after ${ROOM_IDLE_TTL_MS / 1000}s with no human online, check every ${ROOM_SWEEP_MS / 1000}s; ${rooms.size} rooms loaded`);
 
 function shutdown() { if (saveTimer) clearTimeout(saveTimer); saveNow(); process.exit(0); }

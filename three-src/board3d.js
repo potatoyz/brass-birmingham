@@ -564,6 +564,23 @@ export class Board3D {
         c.update(); this.dirty = true;
     }
 
+    // board-plane (u, v) under a client point, or null off the board plane
+    uvAt(clientX, clientY) {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.ptr.set((clientX - rect.left) / rect.width * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+        this.ray.setFromCamera(this.ptr, this.camera);
+        const o = this.ray.ray.origin, d = this.ray.ray.direction;
+        if (Math.abs(d.y) < 1e-6) return null;
+        const k = (0.01 - o.y) / d.y; if (k < 0) return null;
+        return { u: (o.x + d.x * k) / S + 0.5, v: (o.z + d.z * k) / S + 0.5 };
+    }
+    // client point of a board-plane (u, v)
+    uvToScreen(u, v, y = 0.01) {
+        const p = toWorld(u, v, y).project(this.camera);
+        const r = this.renderer.domElement.getBoundingClientRect();
+        return { x: (p.x + 1) / 2 * r.width, y: (1 - p.y) / 2 * r.height, z: p.z };
+    }
+
     // ------------------------------------------------------------------ picking
     pickAt(clientX, clientY) {
         const rect = this.renderer.domElement.getBoundingClientRect();
@@ -588,12 +605,13 @@ export class Board3D {
             const dt = performance.now() - down.t;
             down = null;
             if (moved > 8 || e.button > 0) return;
+            if (this.tapFilter && this.tapFilter(e)) return;   // annotation tools eat the tap
             const hit = this.pickAt(e.clientX, e.clientY);
             this.onPick(hit, e, dt);
         });
         el.addEventListener('pointermove', e => {
             if (e.pointerType !== 'mouse') return;
-            if (e.buttons) { this.onHover(null, e); return; }
+            if (e.buttons || this.annotMode) { this.onHover(null, e); if (this.annotMode) el.style.cursor = 'crosshair'; return; }
             const hit = this.pickAt(e.clientX, e.clientY);
             el.style.cursor = hit && (hit.active || hit.kind === 'tile' || hit.kind === 'merchant') ? 'pointer' : 'grab';
             this.onHover(hit, e);
@@ -764,9 +782,11 @@ export class Board3D {
             for (const key of this.hl.slots) { const m = this.slotMeshes.get(key); if (m && !this.hl.sel.has(key)) m.material.opacity = 0.18 + 0.32 * k; }
             this.dirty = true;
         }
+        if (this.wantFrames && this.wantFrames()) this.dirty = true;
         if (!this.dirty) return;
         this.dirty = false;
         this.renderer.render(this.scene, this.camera);
+        if (this.afterRender) this.afterRender();
     }
 }
 

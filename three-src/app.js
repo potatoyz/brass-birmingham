@@ -4,6 +4,7 @@ import { Board3D, PLAYER_CSS, ownerInitial, tilePath } from './board3d.js';
 import { Net } from './net.js';
 import { Fx, diffStates } from './fx.js';
 import { ICON } from './icons.js';
+import { Annotator } from './annot.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -67,6 +68,9 @@ class App {
         this.seenEvents = JSON.parse(localStorage.getItem('bb3d_seen') || '{}');
         this.queue = []; this.playing = false; this.hold = {};
         this.fx = new Fx(this);
+        this.annot = new Annotator(this.net);
+        this.annot.onChange = () => this.annotUi();
+        this.annot.onPing = m => { if (!m.mine) this.fx.sfx.play('link', { rate: 1.7, volume: 0.45 }); };
         document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = ic(el.dataset.ic); });
         this.bindStatic();
         this.autoJoin();
@@ -107,6 +111,11 @@ class App {
         $('#lobby-leave').onclick = () => this.net.send({ t: 'leave' });
         $('#lobby-copy').onclick = () => this.copy($('#lobby-link').value);
         document.querySelectorAll('.seat-count button').forEach(b => b.onclick = () => this.net.send({ t: 'setSeats', n: +b.dataset.n }));
+        $('#an-ping').onclick = () => this.annot.setMode('ping');
+        $('#an-pen').onclick = () => this.annot.setMode('pen');
+        $('#an-keep').onclick = () => { this.annot.setKeep(!this.annot.keep); toast(this.annot.keep ? '新笔迹将保留，直到手动清除' : '新笔迹 60 秒后自动淡出'); };
+        $('#an-clear').onclick = () => this.annot.clear(false);
+        $('#an-clear-all').onclick = () => { if (confirm('清除所有人的笔迹？')) this.annot.clear(true); };
         $('#btn-view').onclick = () => this.board && this.board.resetView();
         $('#btn-zoom-in').onclick = () => this.board && this.board.zoom(0.8);
         $('#btn-zoom-out').onclick = () => this.board && this.board.zoom(1.25);
@@ -124,6 +133,7 @@ class App {
         $('#btn-reclaim').onclick = () => this.net.send({ t: 'reclaim' });
         $('#btn-panels').onclick = () => document.body.classList.toggle('show-side');
         document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && this.annot.mode && $('#modal').hidden) { this.annot.setMode(this.annot.mode); return; }
             if (e.key === 'Escape') { if (!$('#modal').hidden && !this.modalLocked) this.closeModal(); else this.cancel(); }
         });
         $('#modal-close').onclick = () => this.closeModal();
@@ -175,6 +185,7 @@ class App {
             this.net.code = null; this.net.lastRoom = null; this.msg = null;
             history.replaceState(null, '', location.pathname); this.show('home'); return;
         }
+        if (m.t === 'annot' || m.t === 'annots') { this.annot.onMessage(m); return; }
         if (m.t !== 'room') return;
         this.net.code = m.room.code; this.net.lastRoom = m.room.code;
         if (!new URLSearchParams(location.search).get('room')) history.replaceState(null, '', `?room=${m.room.code}`);
@@ -278,6 +289,7 @@ class App {
                 onHover: (hit, e) => this.onBoardHover(hit, e),
             });
             window.__bb3d = this;
+            this.annot.attach(this.board);
             this.layoutInsets();
             window.addEventListener('resize', () => { this.layoutInsets(); clearTimeout(this.rsT); this.rsT = setTimeout(() => this.board.resetView(), 150); });
         }
@@ -287,6 +299,7 @@ class App {
         this.state.players.forEach((p, i) => { p.color = PLAYER_CSS[i] || p.color; });
         this.logic = new GameLogic(this.state);
         if (versionChanged) { this.busy = false; this.ix = this.freshIx(); }
+        this.annot.me = this.me;
         this.board.update(this.state, this.me);
         this.refresh();
         this.handleBonus(m);
@@ -294,8 +307,24 @@ class App {
         if (first) requestAnimationFrame(() => { this.layoutInsets(); this.board.resetView(); });
     }
 
+    annotUi() {
+        const a = this.annot, pen = a.mode === 'pen';
+        $('#an-ping').classList.toggle('on', a.mode === 'ping');
+        $('#an-pen').classList.toggle('on', pen);
+        $('#an-keep').hidden = !pen; $('#an-keep').classList.toggle('on', a.keep);
+        let mine = 0; for (const s of a.strokes.values()) if (s.mine) mine++;
+        $('#an-clear').hidden = !(pen || mine);
+        $('#an-clear-all').hidden = !(pen || a.strokes.size > mine);
+        let hint = $('#annot-hint');
+        const text = a.mode === 'ping' ? '点版图发信号（Esc 退出）' : pen ? (matchMedia('(pointer:coarse)').matches ? '单指画线，双指缩放' : '拖动画线，滚轮缩放（Esc 退出）') : '';
+        if (text && !hint) { hint = document.createElement('div'); hint.id = 'annot-hint'; hint.className = 'annot-hint'; $('#game').appendChild(hint); }
+        if (hint) { hint.hidden = !text; hint.textContent = text; }
+    }
+
     layoutInsets() {
         if (!this.board) return;
+        const hb = $('#hud').getBoundingClientRect();
+        document.body.style.setProperty('--annot-top', Math.round(hb.bottom + 10) + 'px');
         const wide = window.innerWidth >= 900;
         const top = wide ? $('#opps').getBoundingClientRect().bottom : Math.max($('#hud').getBoundingClientRect().bottom, $('#toolbar').getBoundingClientRect().bottom);
         const dock = $('#dock').getBoundingClientRect();

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link rel="icon" href="data:,">
 <title>工业革命：伯明翰 3D（联机版）</title>
-<link rel="stylesheet" href="css/three.css?v=4">
+<link rel="stylesheet" href="css/three.css?v=5">
 </head>
 <body>
 <!-- 首页 -->
@@ -82,6 +82,13 @@
   <div id="view-ctl">
     <button id="btn-zoom-in" class="ib" title="放大"><i data-ic="plus"></i></button><button id="btn-zoom-out" class="ib" title="缩小"><i data-ic="minus"></i></button><button id="btn-view" class="ib" title="复位视角"><i data-ic="reset"></i></button>
   </div>
+  <div id="annot-ctl" class="annot-ctl">
+    <button id="an-ping" class="ib" title="信号：点版图发一个所有人可见的提示（也可 Alt+点击）"><i data-ic="ping"></i></button>
+    <button id="an-pen" class="ib" title="画笔：在版图上拖动画线，所有人可见"><i data-ic="pen"></i></button>
+    <button id="an-keep" class="ib an-sub" title="笔迹保留到手动清除（关闭则 60 秒后淡出）" hidden><i data-ic="pin"></i></button>
+    <button id="an-clear" class="ib an-sub" title="清除我的笔迹" hidden><i data-ic="eraser"></i></button>
+    <button id="an-clear-all" class="ib an-sub" title="清除所有人的笔迹" hidden><i data-ic="trash"></i></button>
+  </div>
   <div id="dock">
     <div id="panel" class="panel"></div>
     <div id="actions"></div>
@@ -99,6 +106,6 @@
 <script src="js/gameLogic.js?v=6"></script>
 <script src="js/aiPlayer.js?v=4"></script>
 <script src="js/boardAssets.js?v=4"></script>
-<script src="js/three/bb3d.min.js?v=4"></script>
+<script src="js/three/bb3d.min.js?v=5"></script>
 </body>
 </html>

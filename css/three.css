@@ -121,6 +121,13 @@ body.show-log .log{display:block}
 .log-h{display:flex;justify-content:space-between;align-items:center;font-weight:700;color:var(--brass2);margin-bottom:4px;position:sticky;top:-8px;background:#18120c;padding:2px 0}
 .log .le{padding:3px 0;border-bottom:1px dashed #ffffff14;display:flex;gap:4px;align-items:flex-start}.le.era,.le.system{color:var(--gold2)}
 
+/* annotations */
+.annot-ctl{position:absolute;left:10px;top:var(--annot-top,150px);z-index:5;display:flex;flex-direction:column;gap:6px}
+.annot-ctl .ib.on{background:var(--gold);color:#1a120a;border-color:#ffe3a3;box-shadow:0 0 0 2px #ffe3a366}
+.annot-ctl .an-sub{font-size:18px}
+.annot-ctl [hidden],.annot-hint[hidden]{display:none!important}
+.annot-ctl .an-sub.on{background:#3a5a3a;color:#d9ffd9;border-color:#8fd18f;box-shadow:none}
+.annot-hint{position:absolute;left:58px;top:var(--annot-top,150px);z-index:5;background:var(--glass);border:1px solid var(--edge);border-radius:8px;padding:6px 10px;font-size:14px;pointer-events:none;white-space:nowrap}
 #view-ctl{position:absolute;right:152px;bottom:calc(var(--dockh,230px) + 8px);display:flex;gap:6px;z-index:4}
 
 /* dock */
@@ -266,6 +273,8 @@ body.show-log .log{display:block}
   #side-right #mat{grid-template-columns:repeat(3,64px)}
   body.show-side #side-right,body.dev-mode #side-right{display:flex}
   #view-ctl{display:none}
+  .annot-ctl{left:6px;gap:5px}
+  .annot-hint{left:46px;font-size:14px}
   .card{width:58px;min-width:58px;height:88px}
   #actions{gap:4px;flex-wrap:nowrap}
   .act{min-width:0;padding:6px 7px}
