@@ -1,6 +1,6 @@
 // 伯明翰 3D 前端：大厅 + 对局界面 + "先点后确认" 的交互流程。
 // 规则全部来自 js/gameLogic.js（与服务端同一份引擎），这里只做呈现与选择。
-import { Board3D, PLAYER_CSS, ownerInitial } from './board3d.js';
+import { Board3D, PLAYER_CSS, ownerInitial, tilePath } from './board3d.js';
 import { Net } from './net.js';
 
 const $ = s => document.querySelector(s);
@@ -8,7 +8,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const STEM = { cottonMill: 'cotton', coalMine: 'coal', ironWorks: 'iron', manufacturer: 'goods', pottery: 'pottery', brewery: 'brewery' };
 const ORDER = ['cottonMill', 'coalMine', 'ironWorks', 'manufacturer', 'pottery', 'brewery'];
 const V = '?v=3d1';
-const tileImg = (type, level, flipped) => `assets/tiles/${STEM[type]}-${level}${flipped ? '-flipped' : ''}.jpg${V}`;
+const tileImg = (type, level, flipped, pid) => `${tilePath(pid, `${STEM[type]}-${level}${flipped ? '-flipped' : ''}.jpg`)}${V}`;
 const indName = t => (INDUSTRY_DISPLAY[t] ? INDUSTRY_DISPLAY[t].name : t);
 const connName = c => c ? `${c.cities.map(locationName).join(' — ')}${c.viaBrewery ? '（经农场酿酒厂）' : ''}` : '';
 const ownerBadge = (p, pid) => `<i class="ob" style="--pc:${PLAYER_CSS[pid]}" data-ink="${pid}">${esc(ownerInitial(p.name))}<sub>${pid + 1}</sub></i>`;
@@ -40,6 +40,9 @@ function toast(text, type = 'info') {
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3200);
 }
 
+const ROMAN = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ'];
+const costLine = td => `£${td.cost}${td.costCoal ? ` <span class="rc coal">煤${td.costCoal}</span>` : ''}${td.costIron ? ` <span class="rc iron">铁${td.costIron}</span>` : ''}${td.beersToSell ? ` <span class="rc beer">售需啤酒${td.beersToSell}</span>` : ''}`;
+const gainLine = td => `${td.vp} 分 · 收入 +${td.income} · 连线 ${td.linkVP}`;
 function tileInfo(td, type) {
     const parts = [`费用 £${td.cost}`];
     if (td.costCoal) parts.push(`煤 ${td.costCoal}`);
@@ -112,6 +115,7 @@ class App {
             if (e.key === 'Escape') { if (!$('#modal').hidden && !this.modalLocked) this.closeModal(); else this.cancel(); }
         });
         $('#modal-close').onclick = () => this.closeModal();
+        $('#btn-board').onclick = () => this.openBoardModal();
         this.bindPreview();
     }
 
@@ -262,6 +266,7 @@ class App {
         if (!this.state) return;
         this.renderTop(); this.renderPlayers(); this.renderMarkets(); this.renderMat();
         this.renderHand(); this.renderActions(); this.renderPanel(); this.renderLog();
+        if (this.modalKind === 'board' && !$('#modal').hidden) this.openBoardModal(this.boardPid);
         this.updateHighlights();
         if (this.board) this.layoutInsets();
     }
@@ -291,7 +296,7 @@ class App {
             const links = s.era === 'canal' ? `运河 ${p.linksRemaining.canal}` : `铁路 ${p.linksRemaining.rail}`;
             const spent = (s.moneySpentThisRound || {})[pid] || 0;
             const tags = [p.isAI ? '<span class="chip">AI</span>' : '', pid === this.me ? '<span class="chip me">你</span>' : '', seat.human && !seat.online ? '<span class="chip off">离线</span>' : ''].join('');
-            return `<div class="pcard${cur ? ' cur' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="悬停：只看 ${esc(p.name)} 的产业和连线">
+            return `<div class="pcard${cur ? ' cur' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="悬停：只看 ${esc(p.name)} 的产业和连线；点击：看 TA 的产业板">
               <div class="pname">${ownerBadge(p, pid)}${esc(p.name)} ${tags}<span class="muted small porder" title="本轮行动顺序">第${n + 1}位</span></div>
               <div class="pstats"><span title="资金">£${p.money}</span><span title="收入等级">收入 ${incomeLevelFromSpace(p.incomeSpace)}</span><span title="胜利点">${p.vp} 分</span></div>
               <div class="pstats sub"><span>手牌 ${p.hand.length}</span><span>${links}</span><span title="本轮花费（决定下轮顺序）">本轮花 £${spent}</span></div>
@@ -300,6 +305,7 @@ class App {
         box.querySelectorAll('.pcard').forEach(el => {
             el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
             el.onmouseleave = () => this.board && this.board.setFocus(null);
+            el.onclick = e => { if (!e.target.closest('button')) this.openBoardModal(+el.dataset.pid); };
         });
         // colour legend in the top bar (also a focus toggle on touch)
         $('#legend').innerHTML = s.players.map((p, pid) => `<span class="lg${this.focusPid === pid ? ' on' : ''}" data-pid="${pid}" title="${esc(p.name)}：点按只看 TA 的版图资产">${ownerBadge(p, pid)}<span class="lg-n">${esc(p.name)}</span></span>`).join('');
@@ -323,19 +329,51 @@ class App {
         const box = $('#mat');
         const p = this.my;
         if (!p) { box.innerHTML = '<div class="muted">观战中</div>'; return; }
+        box.style.setProperty('--pc', PLAYER_CSS[this.me] || 'transparent');
         const rem = this.state.getRemainingTiles(this.me);
         const devTypes = this.ix.mode === 'develop' && this.myTurn() ? new Set(this.logic.getDevelopableTypes(this.me).map(t => t.type)) : new Set();
         box.innerHTML = ORDER.map(type => {
-            const r = rem[type];
-            if (!r.count) return `<div class="mtile none" data-type="${type}"><div class="mimg empty"></div><div class="mcap">${indName(type)}<br><span class="muted">已用完</span></div></div>`;
+            const r = rem[type], lv = this.levelStrip(this.me, type);
+            if (!r.count) return `<div class="mtile none" data-type="${type}"><div class="mimg empty"></div><div class="mtxt"><b>${indName(type)}</b><div class="muted">已用完</div></div></div>`;
             const td = r.tiles[0];
             const chosen = this.ix.dev.filter(x => x === type).length;
             const cls = (devTypes.has(type) ? ' can' : '') + (chosen ? ' chosen' : '');
-            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type))}">
-              <img class="mimg" src="${tileImg(type, td.level)}" alt="">${chosen ? `<b class="badge">${chosen > 1 ? '×2' : '✓'}</b>` : ''}
-              <div class="mcap">${indName(type)}<br>${td.level} 级 · 剩 ${r.count}${td.canDevelop ? '' : ' · <span class="muted">不可发展</span>'}</div></div>`;
+            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level, false, this.me)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type))}">
+              <img class="mimg" src="${tileImg(type, td.level, false, this.me)}" alt="">${chosen ? `<b class="badge">${chosen > 1 ? '×2' : '✓'}</b>` : ''}
+              <div class="mtxt"><b>${indName(type)} ${ROMAN[td.level]}</b> <span class="muted">剩 ${r.count}</span>
+                <div>${costLine(td)}</div><div>${gainLine(td)}${td.canDevelop ? '' : ' · <span class="warn">不可发展</span>'}</div>
+                <div class="lvs">${lv}</div></div></div>`;
         }).join('');
         box.querySelectorAll('.mtile.can').forEach(el => el.onclick = () => this.toggleDevelop(el.dataset.type));
+    }
+
+    // per-level remaining counts, e.g. Ⅰ×0 Ⅱ×2 … (used-up levels dimmed)
+    levelGroups(pid, type) {
+        const all = (this.state.players[pid].industryTiles || {})[type] || [];
+        const g = new Map();
+        for (const t of all) { const e = g.get(t.level) || { td: t, total: 0, left: 0 }; e.total++; if (!t.used) e.left++; g.set(t.level, e); }
+        return [...g.entries()].sort((a, b) => a[0] - b[0]).map(([level, e]) => ({ level, ...e }));
+    }
+    levelStrip(pid, type) {
+        const gs = this.levelGroups(pid, type), next = gs.find(x => x.left);
+        return gs.map(x => `<span class="lv${x.left ? '' : ' out'}${x === next ? ' next' : ''}">${ROMAN[x.level]}×${x.left}</span>`).join('');
+    }
+    openBoardModal(pid = this.me >= 0 ? this.me : 0) {
+        const s = this.state;
+        const tabs = s.players.map((p, i) => `<button class="btab${i === pid ? ' on' : ''}" data-bp="${i}" style="--pc:${PLAYER_CSS[i]}">${ownerBadge(p, i)}${esc(p.name)}${i === this.me ? '（你）' : ''}</button>`).join('');
+        const rows = ORDER.map(type => {
+            const gs = this.levelGroups(pid, type), next = gs.find(x => x.left);
+            return `<div class="brow"><div class="bname">${indName(type)}<span class="muted">剩 ${gs.reduce((a, x) => a + x.left, 0)}</span></div><div class="blv">${gs.map(x => {
+                const td = x.td, era = td.canalEra && td.railEra ? '' : td.canalEra ? '<span class="era">仅运河</span>' : '<span class="era">仅铁路</span>';
+                return `<div class="bt${x.left ? '' : ' out'}${x === next ? ' next' : ''}" data-preview="tile" data-img="${tileImg(type, x.level, false, pid)}" data-cap="${indName(type)} ${x.level} 级（剩 ${x.left}/${x.total}）" data-info="${esc(tileInfo(td, type))}">
+                  <div class="bimg"><img src="${tileImg(type, x.level, false, pid)}" alt=""><b class="bcnt">×${x.left}<small>/${x.total}</small></b>${x === next ? '<b class="bnext">下一块</b>' : ''}</div>
+                  <div class="bc">${costLine(td)}</div><div class="bg">${td.vp} 分 · +${td.income}</div><div class="bg">连线 ${td.linkVP}${td.canDevelop ? '' : ' · <span class="warn">不可发展</span>'}</div>${era}</div>`;
+            }).join('')}</div></div>`;
+        }).join('');
+        this.openModal(`${s.players[pid].name} 的产业板`, `<div class="btabs">${tabs}</div><div class="pboard" style="--pc:${PLAYER_CSS[pid]}">${rows}</div>`);
+        $('#modal .modal-box').classList.add('wide');
+        $('#modal-body').querySelectorAll('[data-bp]').forEach(b => b.onclick = () => this.openBoardModal(+b.dataset.bp));
+        this.modalKind = 'board'; this.boardPid = pid;
     }
 
     renderHand() {
@@ -613,7 +651,7 @@ class App {
                     const parts = [`£${c.money}`];
                     if (c.coal) parts.push(`煤 ${c.coal}${c.coalCost ? `（买 £${c.coalCost}）` : '（免费）'}`);
                     if (c.iron) parts.push(`铁 ${c.iron}${c.ironCost ? `（买 £${c.ironCost}）` : '（免费）'}`);
-                    return `<button class="opt${on ? ' on' : ''}" data-ind="${t.industryType}"><img src="${tileImg(t.industryType, t.tileData.level)}" alt=""><span><b>${indName(t.industryType)} ${t.tileData.level} 级</b><br>${parts.join(' + ')} = <b>£${c.total}</b></span></button>`;
+                    return `<button class="opt${on ? ' on' : ''}" data-ind="${t.industryType}"><img src="${tileImg(t.industryType, t.tileData.level, false, this.me)}" alt=""><span><b>${indName(t.industryType)} ${t.tileData.level} 级</b><br>${parts.join(' + ')} = <b>£${c.total}</b></span></button>`;
                 }).join('') + '</div>';
                 const t = this.curBuildTarget();
                 if (t) {
@@ -753,6 +791,7 @@ class App {
     openModal(title, html, locked = false) {
         $('#modal-title').textContent = title;
         $('#modal-body').innerHTML = html;
+        $('#modal .modal-box').classList.remove('wide');
         $('#modal').hidden = false;
         this.modalLocked = locked;
         $('#modal-close').hidden = locked;
@@ -765,7 +804,7 @@ class App {
         this.modalKind = 'bonus';
         this.openModal('商人奖励：免费发展', `<p>卖给格洛斯特的商人啤酒，获得 ${pb.count} 次免费发展（不花铁）。选择要移除的板块：</p>
           <div class="opts">${pb.types.map(t => { const r = this.state.getRemainingTiles(this.me)[t]; const lv = r.tiles[0].level;
-            return `<button class="opt" data-bt="${t}"><img src="${tileImg(t, lv)}" alt=""><span><b>${indName(t)} ${lv} 级</b></span></button>`; }).join('')}</div>
+            return `<button class="opt" data-bt="${t}"><img src="${tileImg(t, lv, false, this.me)}" alt=""><span><b>${indName(t)} ${lv} 级</b></span></button>`; }).join('')}</div>
           <div class="btns"><button data-bt="skip">放弃奖励</button></div>`, true);
         $('#modal-body').querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { this.net.send({ t: 'bonus', type: b.dataset.bt }); this.closeModal(); });
     }
@@ -812,7 +851,7 @@ class App {
         if (!hit || hit.kind !== 'tile') return;
         const t = hit.tile, p = this.state.players[t.playerId], td = t.tileData;
         const [cid] = this.splitKey(hit.slotKey);
-        this.showPreview({ img: tileImg(t.type, td.level, t.flipped), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
+        this.showPreview({ img: tileImg(t.type, td.level, t.flipped, t.playerId), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
             info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}\n${tileInfo(td, t.type)}` }, null, 2500);
     }
 
@@ -823,7 +862,7 @@ class App {
             const t = hit.tile, p = this.state.players[t.playerId], td = t.tileData;
             const [cid] = this.splitKey(hit.slotKey);
             this.hideTip();
-            this.showPreview({ img: tileImg(t.type, td.level, t.flipped), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
+            this.showPreview({ img: tileImg(t.type, td.level, t.flipped, t.playerId), cap: `${locationName(cid)} · ${indName(t.type)} ${td.level} 级（${p.name}）`,
                 info: `${t.flipped ? '已翻面' : '未翻面'}${t.resourceCubes ? ` · 剩 ${t.resourceCubes} 个资源` : ''}${hit.active ? '\n点击选择' : ''}\n${tileInfo(td, t.type)}` }, { x: e.clientX, y: e.clientY });
             return;
         }

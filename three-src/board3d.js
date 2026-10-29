@@ -13,13 +13,16 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 export const S = 20;                         // board edge in world units
 const SLOT_W = 38.8 / 900 * S, SLOT_D = 36.3 / 850 * S;
 const TILE = 0.80, TILE_H = 0.11;
-// Owner colours: red / yellow / blue-violet / white keep the physical game's
-// identities but are pushed apart in hue AND lightness so they still read
-// apart with red-green colour blindness; every owned piece also carries a
-// numbered badge, so colour is never the only cue.
-export const PLAYER_CSS = ['#ff4b3e', '#ffd21f', '#6f6bff', '#f2f2f2'];
+// Seats 1-4 use the four printed tile sets (assets/tiles/<set>/). The UI
+// accent colours match each set but are pushed further apart in hue AND
+// lightness (teal tiles print as a pale grey-blue, so its accent is a vivid
+// teal); every owned piece also carries a numbered badge, so colour is never
+// the only cue.
+export const PLAYER_SET = ['purple', 'yellow', 'orange', 'teal'];
+export const PLAYER_CSS = ['#a46cf5', '#f5c518', '#ff6a2b', '#19d3c5'];
+export const tilePath = (pid, file) => `assets/tiles/${PLAYER_SET[pid] ? PLAYER_SET[pid] + '/' : ''}${file}`;
 const PLAYER_HEX = PLAYER_CSS.map(c => parseInt(c.slice(1), 16));
-const PLAYER_INK = ['#fff', '#2a1d00', '#fff', '#1b1b1b'];
+const PLAYER_INK = ['#fff', '#2a1d00', '#fff', '#05302c'];
 const VER = '?v=3d1';
 
 export const ownerInitial = name => { const ch = [...String(name || '?').trim()][0] || '?'; return ch.toUpperCase(); };
@@ -69,8 +72,8 @@ export class Board3D {
         this.boardMesh = board;
 
         this.gSlots = new Group(); this.gLinks = new Group(); this.gTiles = new Group();
-        this.gBuiltLinks = new Group(); this.gMerch = new Group();
-        sc.add(this.gSlots, this.gLinks, this.gTiles, this.gBuiltLinks, this.gMerch);
+        this.gBuiltLinks = new Group(); this.gMerch = new Group(); this.gMarket = new Group();
+        sc.add(this.gSlots, this.gLinks, this.gTiles, this.gBuiltLinks, this.gMerch, this.gMarket);
 
         this.buildSlots();
         this.buildLinkHits();
@@ -249,14 +252,41 @@ export class Board3D {
         this.state = state;
         this.viewerId = viewerId;
         const clear = g => { for (const ch of [...g.children]) { g.remove(ch); ch.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); } };
-        clear(this.gTiles); clear(this.gBuiltLinks); clear(this.gMerch);
+        clear(this.gTiles); clear(this.gBuiltLinks); clear(this.gMerch); clear(this.gMarket);
         for (const [key, t] of Object.entries(state.boardIndustries || {})) this.addTile(key, t);
         for (const [farm, t] of Object.entries(state.breweryFarmTiles || {})) if (t) this.addTile(`${farm}_0`, t, `farm_${farm}`);
         for (const [cid, l] of Object.entries(state.boardLinks || {})) this.addLink(cid, l);
         this.addMerchants(state);
+        this.addMarkets(state);
         if (this.focus != null) { const f = this.focus; this.focus = undefined; this.setFocus(f); }
         this.applyHighlights();
         this.dirty = true;
+    }
+
+    // Coal / iron market cubes on the printed market squares (board.jpg px,
+    // measured from the art). Index i is price space i (cheapest first); with
+    // n cubes left the spaces len-n..len-1 are full, so cheap spaces empty first.
+    marketSpaces(kind) {
+        const rowY = [1061.5, 999, 938.5, 877.5, 816.5, 753.5, 691]; // price £1..£7
+        const [xr, xl, rows] = kind === 'coal' ? [1775, 1730, 7] : [1886.5, 1842.5, 5];
+        const out = [];
+        for (let r = 0; r < rows; r++) out.push([xr, rowY[r]], [xl, rowY[r]]);
+        return out;
+    }
+    addMarkets(state) {
+        for (const [kind, n, col] of [['coal', state.coalMarket, 0x202020], ['iron', state.ironMarket, 0xe07a2c]]) {
+            const sp = this.marketSpaces(kind);
+            const geo = this._cubeGeo || (this._cubeGeo = Object.assign(new BoxGeometry(0.26, 0.26, 0.26), {}));
+            geo.userData.shared = true;
+            const m = this.mat(col, { roughness: 0.5, metalness: kind === 'coal' ? 0.15 : 0 });
+            for (let i = Math.max(0, sp.length - (n || 0)); i < sp.length; i++) {
+                const c = new Mesh(geo, m);
+                const w = toWorld(sp[i][0] / 2048, sp[i][1] / 2048, 0.14);
+                c.position.copy(w); c.rotation.y = ((i * 37) % 11 - 5) * 0.02;
+                c.castShadow = !this.low;
+                this.gMarket.add(c);
+            }
+        }
     }
 
     mat(color, extra = {}) { return new MeshStandardMaterial({ color, roughness: 0.6, ...extra }); }
@@ -269,7 +299,7 @@ export class Board3D {
         const g = new Group();
         g.position.set(pos.x, 0, pos.z);
         const sideM = this.mat(PLAYER_HEX[t.playerId] || 0x888888);
-        const topM = new MeshStandardMaterial({ map: this.tex(`assets/tiles/${stem}-${level}${t.flipped ? '-flipped' : ''}.jpg`), roughness: 0.55 });
+        const topM = new MeshStandardMaterial({ map: this.tex(tilePath(t.playerId, `${stem}-${level}${t.flipped ? '-flipped' : ''}.jpg`)), roughness: 0.55 });
         const box = new Mesh(new BoxGeometry(TILE, TILE_H, TILE), [sideM, sideM, topM, sideM, sideM, sideM]);
         box.position.y = TILE_H / 2 + 0.05;
         box.castShadow = box.receiveShadow = !this.low;
@@ -302,7 +332,7 @@ export class Board3D {
         const g = new Group();
         const w = 0.062 * S, d = 0.028 * S;
         const sideM = this.mat(PLAYER_HEX[l.playerId] || 0x888888);
-        const topM = new MeshStandardMaterial({ map: this.tex(`assets/tiles/${l.type === 'canal' ? 'canal' : 'rail'}.jpg`), roughness: 0.55 });
+        const topM = new MeshStandardMaterial({ map: this.tex(tilePath(l.playerId, `${l.type === 'canal' ? 'canal' : 'rail'}.jpg`)), roughness: 0.55 });
         const box = new Mesh(new BoxGeometry(w, 0.08, d), [sideM, sideM, topM, sideM, sideM, sideM]);
         box.position.y = 0.09; box.castShadow = !this.low; g.add(box);
         this.addOwnerMarks(g, l.playerId, w, d, 0.13, true);
