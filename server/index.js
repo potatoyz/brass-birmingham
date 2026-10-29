@@ -162,8 +162,10 @@ function setConnRoom(ws, code) {
     if (prev && prev !== code) notePresence(prev);
     if (code) notePresence(code);
 }
-function addLog(room, playerId, message, type = 'action') {
-    room.log.unshift({ playerId, message, type, ts: Date.now() });
+function addLog(room, playerId, message, type = 'action', d = null) {
+    const e = { playerId, message, type, ts: Date.now() };
+    if (d) e.d = d;
+    room.log.unshift(e);
     if (room.log.length > 150) room.log.length = 150;
 }
 
@@ -205,7 +207,7 @@ function sendRoom(ws, room) {
         you: { seat, isHost: ws.token === room.hostToken },
         game: viewFor(room, seat),
         version: room.version,
-        log: room.log.slice(0, 100),
+        log: room.log.slice(0, 100).map((e, i) => (i < 60 || !e.d) ? e : { playerId: e.playerId, message: e.message, type: e.type, ts: e.ts }),
         pendingBonus: room.pendingBonus && room.pendingBonus.playerId === seat && seat >= 0
             ? { count: room.pendingBonus.count, types: E.developableTypes(room.game, seat) }
             : (room.pendingBonus ? { waiting: room.pendingBonus.playerId } : null),
@@ -246,18 +248,21 @@ function startGame(room) {
 
 function advance(room, prevPid) {
     const s = room.game;
-    const tr = s.advanceTurn();
+    const round = s.round, era = s.era;
+    const { r: tr, ledger } = E.withLedger(s, () => s.advanceTurn());
+    const rd = E.summarize(ledger, 'round', null);
+    if (rd.income) addLog(room, null, `${era === 'canal' ? '运河' : '铁路'}时代第 ${round} 轮结束：收入结算`, 'income', rd);
     for (const ev of s.lastRoundEvents || []) addLog(room, ev.playerId, ev.message);
     s.lastRoundEvents = [];
     if (tr === 'endCanalEra') {
-        addLog(room, null, '运河时代计分', 'era');
         const scores = s.endCanalEra();
+        addLog(room, null, '运河时代计分', 'era', { act: 'score', scores: scores.map(x => ({ pid: x.playerId, link: x.linkVP, ind: x.industryVP, total: x.totalVP })) });
         addLog(room, null, '铁路时代', 'era');
         room.event = { id: ++room.eventSeq, kind: 'scoring', title: '运河时代结束', scores };
         addLog(room, null, `轮到 ${s.currentPlayer.name}`, 'system');
     } else if (tr === 'endGame') {
-        addLog(room, null, '最终计分', 'era');
         const scores = s.endGame();
+        addLog(room, null, '最终计分', 'era', { act: 'score', scores: scores.map(x => ({ pid: x.playerId, link: x.linkVP, ind: x.industryVP, total: x.totalVP })) });
         room.status = 'ended';
         room.event = { id: ++room.eventSeq, kind: 'gameover', scores };
     } else if (s.currentPlayerId !== prevPid) {
@@ -268,7 +273,7 @@ function advance(room, prevPid) {
 function doAction(room, pid, msg, isAI) {
     const r = E.applyAction(room.game, pid, msg, isAI);
     if (!r.ok) return r;
-    addLog(room, pid, r.logText || r.message);
+    addLog(room, pid, r.logText || r.message, 'action', r.detail);
     if (r.pendingDevelopBonuses > 0 && E.developableTypes(room.game, pid).length > 0) {
         room.pendingBonus = { playerId: pid, count: r.pendingDevelopBonuses };
     } else {

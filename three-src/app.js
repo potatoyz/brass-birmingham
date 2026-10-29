@@ -705,7 +705,7 @@ class App {
 
     renderLog() {
         const s = this.state;
-        const line = e => { const p = e.playerId != null ? s.players[e.playerId] : null; return `<div class="le ${e.type || ''}">${e.ts ? `<time>${hhmm(e.ts)}</time>` : ''}${p ? `${ownerBadge(p, e.playerId)}` : ''}<span>${esc(e.message)}</span></div>`; };
+        const line = e => { const p = e.playerId != null ? s.players[e.playerId] : null; const x = e.d ? this.logDetail(e) : null; return `<div class="le ${e.type || ''}${x && x.sub ? ' has-d' : ''}">${e.ts ? `<time>${hhmm(e.ts)}</time>` : ''}${p ? `${ownerBadge(p, e.playerId)}` : ''}<div class="lb"><div class="lm"><span>${x ? x.main : esc(e.message)}</span>${x ? x.money : ''}</div>${x && x.sub ? `<div class="ld">${x.sub}</div>` : ''}</div></div>`; };
         const log = this.msg.log || [];   // newest first (server unshifts)
         $('#log').innerHTML = `<div class="log-h">日志 <button class="mini" data-close>${ic('close')}</button></div>` + log.slice(0, 100).map(line).join('');
         const dock = $('#log-dock');
@@ -717,7 +717,59 @@ class App {
             }
         } else if (dock.dataset.key) { dock.dataset.key = ''; dock.innerHTML = ''; }
         $('#log [data-close]').onclick = () => document.body.classList.remove('show-log');
+        if (!this.logToggleBound) {
+            this.logToggleBound = true;
+            for (const host of [$('#log'), $('#log-dock')]) host.addEventListener('click', ev => {
+                const le = ev.target.closest('.le.has-d'); if (!le) return;
+                le.classList.toggle('fold');
+            });
+        }
         $('#ticker').innerHTML = log.slice(0, 2).map(line).join('') + (log.length ? '' : '<div class="le muted">对局开始</div>');
+    }
+
+    // Structured action detail from the server's rules ledger -> main line,
+    // money chips and one small detail line (sources, flips, income, …).
+    logDetail(e) {
+        const d = e.d, s = this.state, P = s.players;
+        const who = pid => P[pid] ? `<b class="who" style="--pc:${PLAYER_CSS[pid]}">${esc(P[pid].name)}</b>` : '';
+        const lv = (t, l) => `${esc(indName(t))} ${ROMAN[l] || l}`;
+        const R = { coal: ['coal', '煤'], iron: ['iron', '铁'], beer: ['beer', '酒'] };
+        const cash = (a, plus) => `<b class="${plus ? 'gain' : 'cost'}">${plus ? '+' : '−'}£${a}</b>`;
+        let main = esc(e.message);
+        switch (d.act) {
+            case 'build': if (d.main) main = `建造 ${lv(d.main.t, d.main.lv)} @${esc(d.main.loc)}`; break;
+            case 'network': if (d.links) main = `${d.links[0].t === 'canal' ? '建运河' : '建铁路'} ${d.links.map(l => `${esc(l.a)}–${esc(l.b)}`).join('、')}`; break;
+            case 'sell': if (d.sold) main = `出售 ${d.sold.map(x => `${lv(x.t, x.lv)} @${esc(x.loc)}`).join('、')}`; break;
+            case 'develop': if (d.dev) main = `发展 ${d.dev.map(x => lv(x.t, x.lv)).join('、')}`; break;
+            case 'loan': main = '贷款'; break;
+            case 'scout': main = '侦察（换万能牌）'; break;
+            case 'pass': main = '跳过'; break;
+        }
+        const me = e.playerId;
+        const gainSum = (d.gain || []).reduce((t, g) => t + g.amt, 0);
+        let money = '';
+        if (d.spent) money += cash(d.spent, false);
+        if (gainSum) money += cash(gainSum, true);
+        if (money) money = `<span class="lmon">${money}</span>`;
+        const parts = [];
+        const costs = []; for (const c of d.cost || []) { const o = costs.find(x => x.l === c.l); if (o) o.amt += c.amt; else costs.push({ ...c }); }
+        if (costs.length > 1) parts.push(`<span class="dx">花费 ${costs.map(c => `${esc(c.l)} £${c.amt}`).join(' + ')}</span>`);
+        for (const r of d.res || []) {
+            const [icn, zh] = R[r.r] || ['', r.r];
+            const from = r.src === 'tile' ? `${esc(r.loc)}${r.owner !== me ? `（${who(r.owner)}）` : '（自己）'}`
+                : r.src === 'market' ? `市场 £${r.price}` : r.src === 'supply' ? `供应堆 £${r.price}` : `商人啤酒·${esc(r.loc)}`;
+            parts.push(`<span class="dx">${ic(icn)}${zh}←${from}${r.n > 1 ? ` ×${r.n}` : ''}</span>`);
+        }
+        if (d.tomkt) parts.push(`<span class="dx">${ic(d.tomkt.r)}卖给市场 ×${d.tomkt.n} <b class="gain">+£${d.tomkt.gain}</b></span>`);
+        for (const g of d.gain || []) if (g.why !== 'tomkt') parts.push(`<span class="dx">${esc(g.l)}${g.amt ? ` <b class="gain">+£${g.amt}</b>` : ''}</span>`);
+        for (const v of d.vp || []) parts.push(`<span class="dx">${esc(v.l)} <b class="gain">+${v.amt} 分</b></span>`);
+        for (const f of d.flips || []) parts.push(`<span class="dx">翻面 ${lv(f.t, f.lv)} @${esc(f.loc)} ${who(f.owner)}</span>`);
+        for (const x of d.inc || []) parts.push(`<span class="dx">${who(x.pid)} 收入 ${x.from}→${x.to} <b class="${x.to > x.from ? 'gain' : 'cost'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</b></span>`);
+        if (d.disc && d.disc.length) parts.push(`<span class="dx muted">弃牌：${d.disc.map(esc).join('、')}</span>`);
+        for (const x of d.income || []) parts.push(`<span class="dx">${who(x.pid)} ${x.amt >= 0 ? `<b class="gain">+£${x.amt}</b>` : `<b class="cost">−£${-x.amt}</b>`}</span>`);
+        for (const x of d.short || []) parts.push(`<span class="dx">${who(x.pid)} ${x.vp != null ? `欠款扣 <b class="cost">${x.vp} 分</b>` : `变卖 ${lv(x.t, x.lv)} <b class="gain">+£${x.amt}</b>`}</span>`);
+        for (const x of d.scores || []) parts.push(`<span class="dx">${who(x.pid)} 连线 ${x.link} + 产业 ${x.ind} → <b class="gain">${x.total} 分</b></span>`);
+        return { main, money, sub: parts.join('') };
     }
 
     // ---------------------------------------------------------------- interaction

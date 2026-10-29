@@ -198,7 +198,13 @@ class GameState {
     // Spending tracker (for turn order)
     // ========================================================================
 
+    // Optional action ledger: the server sets a non-enumerable `_ledger`
+    // array around one action so the log can show exactly what was paid,
+    // earned and consumed. No effect on rules when unset.
+    _rec(ev) { if (this._ledger) this._ledger.push(ev); }
+
     spendMoney(playerId, amount) {
+        this._rec({ k: 'spend', pid: playerId, amt: amount });
         const player = this.players[playerId];
         player.money -= amount;
         this.moneySpentThisRound[playerId] = (this.moneySpentThisRound[playerId] || 0) + amount;
@@ -229,6 +235,7 @@ class GameState {
 
     advanceIncomeSpaces(playerId, spaces) {
         const player = this.players[playerId];
+        if (this._ledger) this._rec({ k: 'inc', pid: playerId, spaces, from: incomeLevelFromSpace(player.incomeSpace), to: incomeLevelFromSpace(Math.min(MAX_INCOME_SPACE, Math.max(0, player.incomeSpace + spaces))) });
         player.incomeSpace = Math.min(MAX_INCOME_SPACE, Math.max(0, player.incomeSpace + spaces));
     }
 
@@ -242,6 +249,7 @@ class GameState {
         // within the lower level.
         const player = this.players[playerId];
         const newLevel = Math.max(MIN_INCOME, this.getIncomeLevel(playerId) - LOAN_INCOME_PENALTY);
+        this._rec({ k: 'loanInc', pid: playerId, from: this.getIncomeLevel(playerId), to: newLevel });
         player.incomeSpace = incomeHighestSpaceOfLevel(newLevel);
     }
 
@@ -266,10 +274,12 @@ class GameState {
     // Consume one cube of market coal/iron. The market may be empty — cubes
     // are then bought from the General Supply at the flat empty price.
     takeMarketCoal() {
+        this._rec({ k: 'mkt', res: 'coal', price: this.getCoalPrice(), supply: this.coalMarket <= 0 });
         if (this.coalMarket > 0) this.coalMarket--;
     }
 
     takeMarketIron() {
+        this._rec({ k: 'mkt', res: 'iron', price: this.getIronPrice(), supply: this.ironMarket <= 0 });
         if (this.ironMarket > 0) this.ironMarket--;
     }
 
@@ -294,6 +304,7 @@ class GameState {
             cubesMoved++;
         }
 
+        if (cubesMoved > 0) this._rec({ k: 'tomkt', pid: tile.playerId, key, res: isCoal ? 'coal' : 'iron', n: cubesMoved, gain: moneyGained });
         if (cubesMoved > 0 && tile.resourceCubes === 0) {
             this.flipTile(key, tile);
         }
@@ -559,6 +570,7 @@ class GameState {
         }
         if (!tile || tile.resourceCubes <= 0) return false;
         tile.resourceCubes--;
+        this._rec({ k: 'use', res: tile.type === INDUSTRY_TYPES.COAL_MINE ? 'coal' : tile.type === INDUSTRY_TYPES.IRON_WORKS ? 'iron' : 'beer', key, owner: tile.playerId, level: tile.tileData.level });
 
         // If depleted, flip the tile
         if (tile.resourceCubes <= 0) {
@@ -569,6 +581,7 @@ class GameState {
 
     flipTile(key, tile) {
         if (tile.flipped) return;
+        this._rec({ k: 'flip', key, owner: tile.playerId, type: tile.type, level: tile.tileData.level, spaces: tile.tileData.income });
         tile.flipped = true;
         // Advance income marker by the tile's income icon count (SPACES)
         this.advanceIncomeSpaces(tile.playerId, tile.tileData.income);
@@ -656,6 +669,7 @@ class GameState {
         if (!isFinalRoundOfGame) {
             for (const player of this.players) {
                 const level = incomeLevelFromSpace(player.incomeSpace);
+                this._rec({ k: 'income', pid: player.id, amt: level });
                 player.money += level;
                 if (player.money < 0) {
                     this.resolveShortfall(player);
@@ -710,6 +724,7 @@ class GameState {
             if (cand.farm) delete this.breweryFarmTiles[cand.key];
             else delete this.boardIndustries[cand.key];
             player.money += refund;
+            this._rec({ k: 'shortSale', pid: player.id, type: cand.tile.type, level: cand.tile.tileData.level, amt: refund });
             this.lastRoundEvents.push({
                 type: 'shortfall-sale',
                 playerId: player.id,
@@ -721,6 +736,7 @@ class GameState {
             const deficit = -player.money;
             const vpLoss = Math.min(player.vp, deficit);
             player.vp -= vpLoss;
+            this._rec({ k: 'shortVp', pid: player.id, vp: vpLoss, money: deficit });
             player.money = 0;
             this.lastRoundEvents.push({
                 type: 'shortfall-vp',
@@ -920,6 +936,7 @@ class GameState {
 
     // For development: remove tiles without building them
     developTile(playerId, industryType) {
+        if (this._ledger) { const t = this.getNextTile(playerId, industryType); if (t) this._rec({ k: 'dev', pid: playerId, type: industryType, level: t.level }); }
         const player = this.players[playerId];
         const tiles = player.industryTiles[industryType];
         if (!tiles) return null;

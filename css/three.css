@@ -338,3 +338,18 @@ body.near-side #side-right.mat4 #mat{grid-template-columns:repeat(4,1fr)}
 body.near-side .mlv,body.near-side .mcnt{font-size:16px;line-height:20px;padding:0 5px}
 body.near-side .mcost{font-size:16px;gap:1px 6px}
 body.near-side .mk-mini{font-size:16px;justify-content:space-evenly}
+/* detailed log lines */
+.le .lb{flex:1;min-width:0}
+.le .lm{display:flex;gap:6px;align-items:baseline;justify-content:space-between}
+.le .lm>span{min-width:0}
+.le .lmon{display:inline-flex;gap:4px;flex:none;font-variant-numeric:tabular-nums}
+.le b.cost{color:#ff8f7a;font-weight:800}.le b.gain{color:#7fe0a0;font-weight:800}
+.le .ld{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:2px;font-size:14px;color:#d8ccb5;line-height:1.35}
+.le .ld .dx{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
+.le .ld .ic{font-size:15px}
+.le b.who{color:var(--pc);font-weight:700;filter:brightness(1.25)}
+.le.has-d{cursor:pointer}
+.le.has-d.fold .ld{display:none}
+.le.income{color:var(--gold2)}
+.ticker .le .ld{display:none}
+.ticker .le .lb,.ticker .le .lm{display:flex;min-width:0;overflow:hidden}

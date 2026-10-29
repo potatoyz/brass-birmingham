@@ -231,6 +231,7 @@ class GameLogic {
         const tileData = this.state.useNextTile(playerId, industryType);
         if (!tileData) return { success: false, message: '没有可用的板块' };
 
+        this.state._rec({ k: 'build', pid: playerId, type: industryType, level: tileData.level, loc: cityId, slot: isFarm ? null : slotIndex, base: cost.money, coalCost: cost.coalCost, ironCost: cost.ironCost });
         this.state.spendMoney(playerId, cost.total);
 
         // Consume coal
@@ -307,6 +308,7 @@ class GameLogic {
             }
         }
         if (marketSale && marketSale.moneyGained > 0) {
+            this.state._rec({ k: 'gain', pid: playerId, amt: marketSale.moneyGained, why: 'tomkt' });
             this.state.players[playerId].money += marketSale.moneyGained;
         }
 
@@ -406,6 +408,7 @@ class GameLogic {
         const era = this.state.era;
         const linkType = era === ERA.CANAL ? 'canal' : 'rail';
 
+        this.state._rec({ k: 'link', pid: playerId, type: linkType, conn: connectionId, a: conn.cities[0], b: conn.cities[1], base: era === ERA.CANAL ? CANAL_LINK_COST : RAIL_LINK_COST });
         // Pay cost
         if (era === ERA.CANAL) {
             this.state.spendMoney(playerId, CANAL_LINK_COST);
@@ -580,9 +583,11 @@ class GameLogic {
             if (src.type === 'mine') {
                 const tile = this.state.boardIndustries[src.key];
                 tile.resourceCubes--;
+                this.state._rec({ k: 'use', res: 'coal', key: src.key, owner: tile.playerId, level: tile.tileData.level });
                 consumedMines.push({ key: src.key, tile });
                 undo.push(() => tile.resourceCubes++);
             } else {
+                this.state._rec({ k: 'mkt', res: 'coal', price: src.price, supply: this.state.coalMarket <= 0 });
                 if (this.state.coalMarket > 0) {
                     this.state.coalMarket--;
                     undo.push(() => this.state.coalMarket++);
@@ -627,6 +632,8 @@ class GameLogic {
         if (totalCost > player.money) return fail('钱不够建两条铁路');
 
         // --- Commit ---
+        this.state._rec({ k: 'link', pid: playerId, type: 'rail', conn: connectionId1, a: conn1.cities[0], b: conn1.cities[1], base: RAIL_DOUBLE_LINK_COST });
+        this.state._rec({ k: 'link', pid: playerId, type: 'rail', conn: connectionId2, a: conn2.cities[0], b: conn2.cities[1], base: 0 });
         // Flip any mines the dry-run emptied (grants their owner income)
         for (const { key, tile } of consumedMines) {
             if (tile.resourceCubes <= 0) this.state.flipTile(key, tile);
@@ -1036,6 +1043,7 @@ class GameLogic {
                     const mt = this.state.merchantTiles[+id.slice(2)];
                     mt.hasBeer = false;
                     const merchData = MERCHANTS[mt.location];
+                    this.state._rec({ k: 'mbeer', pid: playerId, merchant: mt.location, name: merchData.name, bonus: merchData.bonusType, amt: merchData.bonusAmount, forKey: key });
                     switch (merchData.bonusType) {
                         case 'vp':
                             player.vp += merchData.bonusAmount;
@@ -1043,6 +1051,7 @@ class GameLogic {
                             break;
                         case 'money':
                             player.money += merchData.bonusAmount;
+                            this.state._rec({ k: 'gain', pid: playerId, amt: merchData.bonusAmount, why: 'merchant', name: merchData.name });
                             notes.push(`+£${merchData.bonusAmount}（${merchData.name}）`);
                             break;
                         case 'income':
@@ -1061,11 +1070,13 @@ class GameLogic {
                     }
                 } else {
                     notes.push(`啤酒：${this.beerSourceLabel(id, true, playerId)}`);
+                    if (this.state._ledger) this.state._rec({ k: 'beerFor', forKey: key });
                     this.state.consumeResource(id.slice(2));
                 }
             }
 
             // Flip the tile (advances income by the tile's spaces)
+            this.state._rec({ k: 'sold', pid: playerId, key, type: tile.type, level: tile.tileData.level });
             this.state.flipTile(key, tile);
 
             let line = `出售了 ${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level}`;
@@ -1093,6 +1104,7 @@ class GameLogic {
         }
         const player = this.state.players[playerId];
         player.money += LOAN_AMOUNT;
+        this.state._rec({ k: 'gain', pid: playerId, amt: LOAN_AMOUNT, why: 'loan' });
         this.state.applyLoanIncomeDrop(playerId);
 
         this.discardCard(playerId, cardIndex);
@@ -1126,6 +1138,7 @@ class GameLogic {
         // Remove cards in reverse index order to maintain indices
         const sorted = [...cardIndices].sort((a, b) => b - a);
         for (const idx of sorted) {
+            this.state._rec({ k: 'discard', pid: playerId, card: this.cardLabel(player.hand[idx]) });
             player.hand.splice(idx, 1);
         }
 
@@ -1234,11 +1247,19 @@ class GameLogic {
     // Card Management
     // ========================================================================
 
+    cardLabel(card) {
+        if (!card) return '';
+        if (card.type === CARD_TYPES.LOCATION) return (CITIES[card.location] && CITIES[card.location].name) || card.name || card.location;
+        if (card.type === CARD_TYPES.INDUSTRY) return (card.industryTypes || []).map(t => INDUSTRY_DISPLAY[t] ? INDUSTRY_DISPLAY[t].name : t).join('/') || card.name;
+        return card.name || '万能牌';
+    }
+
     discardCard(playerId, cardIndex) {
         const player = this.state.players[playerId];
         if (cardIndex < 0 || cardIndex >= player.hand.length) return;
 
         const card = player.hand[cardIndex];
+        this.state._rec({ k: 'discard', pid: playerId, card: this.cardLabel(card) });
 
         // Wild cards go back to their piles
         if (card.type === CARD_TYPES.WILD_LOCATION) {
