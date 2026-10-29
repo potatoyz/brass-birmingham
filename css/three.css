@@ -136,3 +136,18 @@ body.show-log .log{display:block}
 }
 @media (max-height:860px) and (min-width:900px){.card{width:66px;min-width:66px;height:98px}.panel{padding:6px 10px}#dock{gap:4px}}
 @media (max-width:899px){.side-h .small{display:none}body.show-side #view-ctl{display:none}}
+/* ---- owner identity / action reasons ---- */
+.ob{display:inline-flex;align-items:center;justify-content:center;position:relative;width:24px;height:24px;border-radius:50%;background:var(--pc);color:#fff;font-style:normal;font-weight:800;font-size:14px;margin-right:6px;box-shadow:0 0 0 2px #111,0 0 0 3px var(--pc);vertical-align:middle;flex:none}
+.ob[data-ink="1"],.ob[data-ink="3"]{color:#1b1b1b}
+.ob sub{position:absolute;right:-5px;bottom:-5px;font-size:10px;line-height:13px;min-width:13px;border-radius:7px;background:#111;color:#fff;text-align:center}
+.pcard{border-left-width:8px;background:linear-gradient(90deg,color-mix(in srgb,var(--pc) 22%,transparent),transparent 60%),var(--panel)}
+.pcard .pname{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+.pcard .porder{margin-left:auto}
+.legend{display:flex;gap:6px;flex-wrap:wrap}
+.legend .lg{display:inline-flex;align-items:center;padding:1px 8px 1px 3px;border-radius:14px;border:1px solid var(--line);background:#0006;cursor:pointer;font-size:14px}
+.legend .lg.on{border-color:var(--gold2);background:#5a4224}
+.legend .ob{width:20px;height:20px;font-size:12px}
+@media (max-width:899px){.legend .lg-n{display:none}}
+.act.dis{opacity:.45;cursor:not-allowed}
+.act.dis:hover{background:#2b2118ee;border-color:var(--line)}
+.hint .why{font-size:14px;color:var(--muted);margin-top:2px}

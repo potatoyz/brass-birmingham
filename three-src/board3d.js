@@ -5,16 +5,24 @@ import {
     WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight,
     TextureLoader, SRGBColorSpace, MeshStandardMaterial, MeshBasicMaterial, Mesh, BoxGeometry,
     PlaneGeometry, CylinderGeometry, Group, Vector2, Vector3, Raycaster, CanvasTexture,
-    PCFSoftShadowMap, DoubleSide, MOUSE, TOUCH,
+    PCFSoftShadowMap, DoubleSide, MOUSE, TOUCH, BufferGeometry, Float32BufferAttribute,
 } from 'three';
+import { ROUTES } from './routes.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export const S = 20;                         // board edge in world units
 const SLOT_W = 38.8 / 900 * S, SLOT_D = 36.3 / 850 * S;
 const TILE = 0.80, TILE_H = 0.11;
-const PLAYER_HEX = [0xc0392b, 0xf39c12, 0x8e44ad, 0xd9d0c2];
+// Owner colours: red / yellow / blue-violet / white keep the physical game's
+// identities but are pushed apart in hue AND lightness so they still read
+// apart with red-green colour blindness; every owned piece also carries a
+// numbered badge, so colour is never the only cue.
+export const PLAYER_CSS = ['#ff4b3e', '#ffd21f', '#6f6bff', '#f2f2f2'];
+const PLAYER_HEX = PLAYER_CSS.map(c => parseInt(c.slice(1), 16));
+const PLAYER_INK = ['#fff', '#2a1d00', '#fff', '#1b1b1b'];
 const VER = '?v=3d1';
 
+export const ownerInitial = name => { const ch = [...String(name || '?').trim()][0] || '?'; return ch.toUpperCase(); };
 const toWorld = (u, v, y = 0) => new Vector3((u - 0.5) * S, y, (v - 0.5) * S);
 
 export class Board3D {
@@ -127,41 +135,74 @@ export class Board3D {
         return a ? { x: a[0], y: a[1] } : null;
     }
 
-    // Where along each route a link tile lies: midpoint unless that covers a
-    // printed banner or industry space (ported from the SVG renderer).
-    linkPlacement(conn, placed) {
+    // Printed centre line of a route in board UV (traced from board.jpg by
+    // scripts/trace-routes.py); straight anchor-to-anchor chord as fallback.
+    route(conn) {
+        const r = ROUTES[conn.id];
+        const pt = ([u, v]) => ({ x: u, y: v });
+        if (r) return { line: r.line.map(pt), spur: r.spur ? r.spur.map(pt) : null };
         const a = this.anchor(conn.cities[0]), b = this.anchor(conn.cities[1]);
-        if (!a || !b) return null;
-        let p1 = a, p2 = b;
-        if (conn.viaBrewery) {
-            const m = this.anchor(conn.viaBrewery);
-            // use the longer leg so the tile sits clear of the farm space
-            const d1 = Math.hypot(m.x - a.x, m.y - a.y), d2 = Math.hypot(b.x - m.x, b.y - m.y);
-            if (d1 >= d2) { p2 = m; } else { p1 = m; }
-        }
+        return a && b ? { line: [a, b], spur: null } : null;
+    }
+
+    // Where along the printed route a link tile lies: middle of the line unless
+    // that covers a printed banner, industry space or another link tile.
+    linkPlacement(conn, placed) {
+        const rt = this.route(conn);
+        if (!rt) return null;
+        const L = rt.line, cum = [0];
+        for (let i = 1; i < L.length; i++) cum.push(cum[i - 1] + Math.hypot(L[i].x - L[i - 1].x, L[i].y - L[i - 1].y));
+        const total = cum[cum.length - 1] || 1;
+        const at = t => {
+            const d = t * total; let i = 1;
+            while (i < L.length - 1 && cum[i] < d) i++;
+            const a = L[i - 1], b = L[i], k = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1);
+            return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, ang: Math.atan2(b.y - a.y, b.x - a.x) };
+        };
         const obstacles = this.obstacles();
         const w = 0.062, h = 0.028;
-        const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
         const dist = (px, py, q) => Math.hypot(Math.max(q[0] - px, 0, px - q[2]), Math.max(q[1] - py, 0, py - q[3]));
         const cost = t => {
-            const cx = p1.x + dx * t, cy = p1.y + dy * t; let c = 0;
+            const p = at(t), ux = Math.cos(p.ang), uy = Math.sin(p.ang); let c = 0;
             for (let k = -2; k <= 2; k++) {
-                const px = cx + ux * (w / 2 - h / 2) * (k / 2), py = cy + uy * (w / 2 - h / 2) * (k / 2);
+                const px = p.x + ux * (w / 2 - h / 2) * (k / 2), py = p.y + uy * (w / 2 - h / 2) * (k / 2);
                 for (const q of obstacles) if (dist(px, py, q) < h / 2) c += 1;
                 for (const q of placed) if (dist(px, py, q) < h / 4) c += 1;
             }
             return c;
         };
         let best = 0.5, bc = cost(0.5);
-        for (let s = 1; s <= 20 && bc > 0; s++) {
-            for (const t of [0.5 - s * 0.02, 0.5 + s * 0.02]) {
-                if (t < 0.15 || t > 0.85) continue;
+        for (let s = 1; s <= 30 && bc > 0; s++) {
+            for (const t of [0.5 - s * 0.01, 0.5 + s * 0.01]) {
+                if (t < 0.2 || t > 0.8) continue;
                 const c = cost(t); if (c < bc) { bc = c; best = t; }
             }
         }
-        const cx = p1.x + dx * best, cy = p1.y + dy * best;
-        placed.push([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]);
-        return { u: cx, v: cy, angle: Math.atan2(dy, dx), seg: [p1, p2, a, b] };
+        const p = at(best);
+        placed.push([p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2]);
+        return { u: p.x, v: p.y, angle: p.ang, line: L, spur: rt.spur };
+    }
+
+    // flat strip following a polyline (UV points) at height y
+    ribbon(pts, width, y) {
+        const P = pts.map(p => toWorld(p.x, p.y, y)), pos = [], idx = [];
+        for (let i = 0; i < P.length; i++) {
+            const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+            let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+            // mitre: widen at bends so the strip keeps its width
+            let k = 1;
+            if (i > 0 && i < P.length - 1) {
+                const sx = P[i].x - a.x, sz = P[i].z - a.z, sl = Math.hypot(sx, sz) || 1;
+                k = 1 / Math.max(0.5, (sx * tx + sz * tz) / sl);
+            }
+            const nx = -tz * width / 2 * k, nz = tx * width / 2 * k;
+            pos.push(P[i].x + nx, y, P[i].z + nz, P[i].x - nx, y, P[i].z - nz);
+            if (i) { const j = 2 * i; idx.push(j - 2, j - 1, j, j - 1, j + 1, j); }
+        }
+        const g = new BufferGeometry();
+        g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+        g.setIndex(idx);
+        return g;
     }
 
     obstacles() {
@@ -181,20 +222,13 @@ export class Board3D {
             const p = this.linkPlacement(conn, placed);
             if (!p) continue;
             this.linkInfo.set(conn.id, p);
-            // hit/highlight strip along the whole route (both legs for farm routes)
-            const legs = conn.viaBrewery
-                ? [[p.seg[2], this.anchor(conn.viaBrewery)], [this.anchor(conn.viaBrewery), p.seg[3]]]
-                : [[p.seg[2], p.seg[3]]];
+            // hit/highlight strip along the printed line (plus the spur to the
+            // farm brewery: one link, one tile, three places connected)
             const group = new Group();
             group.userData = { kind: 'link', connId: conn.id };
-            for (const [a, b] of legs) {
-                const A = toWorld(a.x, a.y), B = toWorld(b.x, b.y);
-                const len = A.distanceTo(B);
-                const m = new Mesh(new PlaneGeometry(len * 0.62, 0.34),
+            for (const pts of [p.line, p.spur].filter(Boolean)) {
+                const m = new Mesh(this.ribbon(pts, 0.34, 0.02),
                     new MeshBasicMaterial({ color: 0x5ff0ff, transparent: true, opacity: 0, depthWrite: false, side: DoubleSide }));
-                m.rotation.x = -Math.PI / 2;
-                m.rotation.z = -Math.atan2(B.z - A.z, B.x - A.x);
-                m.position.copy(A.clone().add(B).multiplyScalar(0.5)).setY(0.02);
                 m.userData = group.userData;
                 group.add(m);
             }
@@ -220,6 +254,7 @@ export class Board3D {
         for (const [farm, t] of Object.entries(state.breweryFarmTiles || {})) if (t) this.addTile(`${farm}_0`, t, `farm_${farm}`);
         for (const [cid, l] of Object.entries(state.boardLinks || {})) this.addLink(cid, l);
         this.addMerchants(state);
+        if (this.focus != null) { const f = this.focus; this.focus = undefined; this.setFocus(f); }
         this.applyHighlights();
         this.dirty = true;
     }
@@ -236,12 +271,10 @@ export class Board3D {
         const sideM = this.mat(PLAYER_HEX[t.playerId] || 0x888888);
         const topM = new MeshStandardMaterial({ map: this.tex(`assets/tiles/${stem}-${level}${t.flipped ? '-flipped' : ''}.jpg`), roughness: 0.55 });
         const box = new Mesh(new BoxGeometry(TILE, TILE_H, TILE), [sideM, sideM, topM, sideM, sideM, sideM]);
-        box.position.y = TILE_H / 2;
+        box.position.y = TILE_H / 2 + 0.05;
         box.castShadow = box.receiveShadow = !this.low;
         g.add(box);
-        // owner rim so colours read from straight above too
-        const rim = new Mesh(new BoxGeometry(TILE + 0.07, 0.04, TILE + 0.07), sideM);
-        rim.position.y = 0.02; g.add(rim);
+        this.addOwnerMarks(g, t.playerId, TILE, TILE, TILE_H + 0.05);
         const n = t.resourceCubes || 0;
         if (n > 0 && !t.flipped) {
             for (let i = 0; i < n; i++) {
@@ -249,10 +282,10 @@ export class Board3D {
                 if (t.type === 'brewery') {
                     m = new Mesh(new CylinderGeometry(0.09, 0.09, 0.2, 14), this.mat(0x9a6a33));
                     m.rotation.z = Math.PI / 2;
-                    m.position.set(-0.2 + (i % 3) * 0.2, TILE_H + 0.09, 0.24 - Math.floor(i / 3) * 0.2);
+                    m.position.set(-0.2 + (i % 3) * 0.2, TILE_H + 0.14, 0.24 - Math.floor(i / 3) * 0.2);
                 } else {
                     m = new Mesh(new BoxGeometry(0.15, 0.15, 0.15), this.mat(t.type === 'coalMine' ? 0x1b1b1b : 0xd8742a));
-                    m.position.set(-0.24 + (i % 4) * 0.16, TILE_H + 0.075, 0.26 - Math.floor(i / 4) * 0.17);
+                    m.position.set(-0.24 + (i % 4) * 0.16, TILE_H + 0.125, 0.26 - Math.floor(i / 4) * 0.17);
                 }
                 m.castShadow = !this.low;
                 g.add(m);
@@ -271,14 +304,88 @@ export class Board3D {
         const sideM = this.mat(PLAYER_HEX[l.playerId] || 0x888888);
         const topM = new MeshStandardMaterial({ map: this.tex(`assets/tiles/${l.type === 'canal' ? 'canal' : 'rail'}.jpg`), roughness: 0.55 });
         const box = new Mesh(new BoxGeometry(w, 0.08, d), [sideM, sideM, topM, sideM, sideM, sideM]);
-        box.position.y = 0.06; box.castShadow = !this.low; g.add(box);
-        const rim = new Mesh(new BoxGeometry(w + 0.08, 0.035, d + 0.08), sideM);
-        rim.position.y = 0.018; g.add(rim);
+        box.position.y = 0.09; box.castShadow = !this.low; g.add(box);
+        this.addOwnerMarks(g, l.playerId, w, d, 0.13, true);
         g.position.copy(toWorld(p.u, p.v));
         g.rotation.y = -p.angle;
-        const ud = { kind: 'builtLink', connId, link: l };
+        const ud = { kind: 'builtLink', connId, link: l, playerId: l.playerId };
         g.traverse(o => { o.userData = ud; });
+        g.userData = ud;
         this.gBuiltLinks.add(g);
+        // owner-coloured band along the whole printed route (and farm spur)
+        const band = new Group();
+        const bandM = new MeshBasicMaterial({ color: PLAYER_HEX[l.playerId] || 0x888888, transparent: true, opacity: 0.8, depthWrite: false, side: DoubleSide });
+        for (const pts of [p.line, p.spur].filter(Boolean)) band.add(new Mesh(this.ribbon(pts, 0.17, 0.008), bandM));
+        band.userData = ud; band.traverse(o => { o.userData = ud; });
+        this.gBuiltLinks.add(band);
+    }
+
+    // Owner identity on a placed piece: thick coloured plinth, a soft coloured
+    // shadow around it and a numbered badge on the corner.
+    addOwnerMarks(g, pid, w, d, topY, isLink = false) {
+        const col = PLAYER_HEX[pid] || 0x888888;
+        const glow = new Mesh(new PlaneGeometry(w + (isLink ? 0.3 : 0.42), d + (isLink ? 0.3 : 0.42)),
+            new MeshBasicMaterial({ map: this.glowTex(), color: col, transparent: true, opacity: 0.95, depthWrite: false }));
+        glow.rotation.x = -Math.PI / 2; glow.position.y = 0.006; g.add(glow);
+        const plinth = new Mesh(new BoxGeometry(w + 0.16, 0.06, d + 0.16), this.mat(col, { roughness: 0.45 }));
+        plinth.position.y = 0.03; plinth.castShadow = !this.low; g.add(plinth);
+        const bs = isLink ? 0.3 : 0.34;
+        const badge = new Mesh(new PlaneGeometry(bs, bs), new MeshBasicMaterial({ map: this.badgeTex(pid), transparent: true, depthWrite: false }));
+        badge.rotation.x = -Math.PI / 2;
+        badge.position.set(-w / 2 + (isLink ? 0.02 : 0.04), topY + 0.012, -d / 2 + (isLink ? 0.02 : 0.04));
+        badge.renderOrder = 2; g.add(badge);
+    }
+
+    glowTex() {
+        if (this.texCache.has('glow')) return this.texCache.get('glow');
+        const c = document.createElement('canvas'); c.width = c.height = 64;
+        const x = c.getContext('2d');
+        const gr = x.createRadialGradient(32, 32, 10, 32, 32, 32);
+        gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+        const t = new CanvasTexture(c); this.texCache.set('glow', t); return t;
+    }
+
+    // round badge: name initial big, seat number small, in the owner colour
+    badgeTex(pid) {
+        const p = this.state && this.state.players[pid];
+        const ini = p ? ownerInitial(p.name) : '?';
+        const key = `badge:${pid}:${ini}`;
+        if (this.texCache.has(key)) return this.texCache.get(key);
+        const c = document.createElement('canvas'); c.width = c.height = 128;
+        const x = c.getContext('2d');
+        x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2);
+        x.fillStyle = PLAYER_CSS[pid] || '#888'; x.fill();
+        x.lineWidth = 9; x.strokeStyle = '#111'; x.stroke();
+        x.fillStyle = PLAYER_INK[pid] || '#fff';
+        x.textAlign = 'center'; x.textBaseline = 'middle';
+        x.font = 'bold 62px "Noto Sans CJK SC","Microsoft YaHei",sans-serif';
+        x.fillText(ini, 54, 60);
+        x.font = 'bold 36px sans-serif';
+        x.fillText(String(pid + 1), 96, 92);
+        const t = new CanvasTexture(c); t.colorSpace = SRGBColorSpace; t.anisotropy = 4;
+        this.texCache.set(key, t); return t;
+    }
+
+    // "只看某玩家": everyone else's pieces fade while hovering a player card
+    setFocus(pid) {
+        if (this.focus === pid) return;
+        this.focus = pid;
+        const apply = (g, owner) => {
+            const dim = pid != null && owner !== pid;
+            g.traverse(o => {
+                if (!o.material) return;
+                for (const m of [].concat(o.material)) {
+                    if (m.userData.baseOp === undefined) m.userData.baseOp = m.opacity, m.userData.baseTr = m.transparent;
+                    m.transparent = dim || m.userData.baseTr;
+                    m.opacity = dim ? m.userData.baseOp * 0.18 : m.userData.baseOp;
+                    m.needsUpdate = true;
+                }
+            });
+        };
+        for (const g of this.gTiles.children) apply(g, g.userData.tile.playerId);
+        for (const g of this.gBuiltLinks.children) apply(g, g.userData.playerId);
+        this.dirty = true;
     }
 
     merchantTex(buys) {
@@ -340,7 +447,7 @@ export class Board3D {
             const id = g.userData.connId, on = this.hl.links.has(id), s = this.hl.sel.has(id);
             g.children.forEach(m => {
                 const isMk = m === g.userData.marker;
-                m.material.opacity = s ? (isMk ? 0.85 : 0.35) : on ? (isMk ? 0.7 : 0.18) : 0;
+                m.material.opacity = s ? (isMk ? 0.85 : 0.42) : on ? (isMk ? 0.7 : 0.26) : 0;
                 m.material.color.setHex(s ? 0x4dff88 : 0x5ff0ff);
             });
             g.userData.active = on || s;

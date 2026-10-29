@@ -1,6 +1,6 @@
 // 伯明翰 3D 前端：大厅 + 对局界面 + "先点后确认" 的交互流程。
 // 规则全部来自 js/gameLogic.js（与服务端同一份引擎），这里只做呈现与选择。
-import { Board3D } from './board3d.js';
+import { Board3D, PLAYER_CSS, ownerInitial } from './board3d.js';
 import { Net } from './net.js';
 
 const $ = s => document.querySelector(s);
@@ -10,6 +10,8 @@ const ORDER = ['cottonMill', 'coalMine', 'ironWorks', 'manufacturer', 'pottery',
 const V = '?v=3d1';
 const tileImg = (type, level, flipped) => `assets/tiles/${STEM[type]}-${level}${flipped ? '-flipped' : ''}.jpg${V}`;
 const indName = t => (INDUSTRY_DISPLAY[t] ? INDUSTRY_DISPLAY[t].name : t);
+const connName = c => c ? `${c.cities.map(locationName).join(' — ')}${c.viaBrewery ? '（经农场酿酒厂）' : ''}` : '';
+const ownerBadge = (p, pid) => `<i class="ob" style="--pc:${PLAYER_CSS[pid]}" data-ink="${pid}">${esc(ownerInitial(p.name))}<sub>${pid + 1}</sub></i>`;
 const DIFF = { easy: '简单', normal: '普通', hard: '困难' };
 const ACT = [
     ['build', '建造'], ['network', '建网'], ['sell', '销售'], ['develop', '发展'],
@@ -222,6 +224,7 @@ class App {
         const versionChanged = this.version !== m.version;
         this.version = m.version;
         this.state = hydrate(m.game);
+        this.state.players.forEach((p, i) => { p.color = PLAYER_CSS[i] || p.color; });
         this.logic = new GameLogic(this.state);
         if (versionChanged) { this.busy = false; this.ix = this.freshIx(); }
         this.board.update(this.state, this.me);
@@ -288,12 +291,23 @@ class App {
             const links = s.era === 'canal' ? `运河 ${p.linksRemaining.canal}` : `铁路 ${p.linksRemaining.rail}`;
             const spent = (s.moneySpentThisRound || {})[pid] || 0;
             const tags = [p.isAI ? '<span class="chip">AI</span>' : '', pid === this.me ? '<span class="chip me">你</span>' : '', seat.human && !seat.online ? '<span class="chip off">离线</span>' : ''].join('');
-            return `<div class="pcard${cur ? ' cur' : ''}" style="--pc:${p.color}">
-              <div class="pname"><b>${n + 1}</b><i class="sw" style="background:${p.color}"></i>${esc(p.name)} ${tags}</div>
+            return `<div class="pcard${cur ? ' cur' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="悬停：只看 ${esc(p.name)} 的产业和连线">
+              <div class="pname">${ownerBadge(p, pid)}${esc(p.name)} ${tags}<span class="muted small porder" title="本轮行动顺序">第${n + 1}位</span></div>
               <div class="pstats"><span title="资金">£${p.money}</span><span title="收入等级">收入 ${incomeLevelFromSpace(p.incomeSpace)}</span><span title="胜利点">${p.vp} 分</span></div>
               <div class="pstats sub"><span>手牌 ${p.hand.length}</span><span>${links}</span><span title="本轮花费（决定下轮顺序）">本轮花 £${spent}</span></div>
             </div>`;
         }).join('');
+        box.querySelectorAll('.pcard').forEach(el => {
+            el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
+            el.onmouseleave = () => this.board && this.board.setFocus(null);
+        });
+        // colour legend in the top bar (also a focus toggle on touch)
+        $('#legend').innerHTML = s.players.map((p, pid) => `<span class="lg${this.focusPid === pid ? ' on' : ''}" data-pid="${pid}" title="${esc(p.name)}：点按只看 TA 的版图资产">${ownerBadge(p, pid)}<span class="lg-n">${esc(p.name)}</span></span>`).join('');
+        $('#legend').querySelectorAll('.lg').forEach(el => {
+            el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
+            el.onmouseleave = () => this.board && this.board.setFocus(this.focusPid ?? null);
+            el.onclick = () => { const pid = +el.dataset.pid; this.focusPid = this.focusPid === pid ? null : pid; this.board && this.board.setFocus(this.focusPid ?? null); this.renderPlayers(); };
+        });
     }
 
     renderMarkets() {
@@ -349,13 +363,71 @@ class App {
     renderActions() {
         const box = $('#actions');
         const turn = this.myTurn();
+        this.actReasons = {};
         box.innerHTML = ACT.map(([a, label]) => {
-            let reason = turn ? this.logic.getDisabledReason(a, this.me) : '还没轮到你';
-            if (!reason && a === 'build' && this.ix.card != null && !this.targetsWithCard(this.ix.card).length) reason = '这张牌没有可建造的位置';
+            let reason = turn ? this.whyNot(a) : '还没轮到你';
+            if (!reason && a === 'build' && this.ix.card != null && !this.targetsWithCard(this.ix.card).length) reason = '这张牌没有可建造的位置（可换一张牌，或用它做别的动作）';
+            this.actReasons[a] = reason;
             const on = this.ix.mode === a;
-            return `<button class="act${on ? ' on' : ''}" data-a="${a}" ${reason ? 'disabled' : ''} title="${esc(reason || ACT_TIP[a])}">${label}</button>`;
+            // not the disabled attribute: disabled buttons get no hover/touch, and the reason must be readable
+            return `<button class="act${on ? ' on' : ''}${reason ? ' dis' : ''}" data-a="${a}" aria-disabled="${reason ? 'true' : 'false'}" data-tip="${esc(reason || ACT_TIP[a])}">${label}</button>`;
         }).join('');
-        box.querySelectorAll('.act').forEach(b => b.onclick = () => this.startAction(b.dataset.a));
+        box.querySelectorAll('.act').forEach(b => {
+            const a = b.dataset.a;
+            b.onclick = () => { if (this.actReasons[a]) { toast(`${ACT_NAME[a]}不可用：${this.actReasons[a]}`, 'warn'); return; } this.startAction(a); };
+            b.onmouseenter = () => { const r = b.getBoundingClientRect(); this.showTip(this.actReasons[a] ? `${ACT_NAME[a]}不可用\n${this.actReasons[a]}` : ACT_TIP[a], r.left + r.width / 2, r.top - 8, true); };
+            b.onmouseleave = () => this.hideTip();
+        });
+    }
+
+    // Why an action button is unavailable, worked out from the same rules
+    // engine the server uses (the engine's own reason, made specific).
+    whyNot(a) {
+        const L = this.logic, s = this.state, me = this.me, p = this.my;
+        const base = L.getDisabledReason(a, me);
+        if (!base || !p.hand.length) return base;
+        const money = p.money;
+        const rich = fn => { p.money = 1e9; try { return fn(); } finally { p.money = money; } };
+        switch (a) {
+            case 'build': {
+                const t = rich(() => L.getValidBuildTargets(me));
+                if (t.length) return `资金不足：最便宜的建造需要 £${Math.min(...t.map(x => x.cost.total))}，你只有 £${money}`;
+                L.calculateBuildCost = () => ({ money: 0, coal: 0, coalCost: 0, iron: 0, ironCost: 0, total: 0 });
+                let t2; try { t2 = L.getValidBuildTargets(me); } finally { delete L.calculateBuildCost; }
+                if (t2.length) {
+                    const noCoal = t2.filter(x => x.tileData.costCoal > 0 && s.findCoalSource(x.cityId, me).length < x.tileData.costCoal);
+                    if (noCoal.length) return `缺煤：能建的位置（如${locationName(noCoal[0].cityId)}的${indName(noCoal[0].industryType)}）拿不到所需的煤——需连到有煤的煤矿，或连到商人才能买市场煤`;
+                    return '缺铁：能建的位置都拿不到所需的铁';
+                }
+                return '没有可建位置：手牌对应的地点没有合适的空位，或产业牌所需地点不在你的网络里';
+            }
+            case 'network': {
+                if (/用完/.test(base)) return `${base}：你的${s.era === 'canal' ? '运河' : '铁路'}连线块已全部放到版图上`;
+                const t = rich(() => L.getValidNetworkTargets(me));
+                if (t.length) return `资金不足：建网需要 £${Math.min(...t.map(x => x.cost))}，你只有 £${money}`;
+                const free = L.playerHasNoTilesOnBoard(me);
+                const cand = CONNECTIONS.filter(c => !s.boardLinks[c.id] && (s.era === 'canal' ? c.canal : c.rail) &&
+                    (free || s.isInNetwork(me, c.cities[0]) || s.isInNetwork(me, c.cities[1])));
+                if (cand.length && s.era !== 'canal') return '没有可用的煤：铁路每段需要 1 煤，你网络边上的线路两端都连不到煤矿或市场';
+                return '没有可建的连线：与你网络相邻的线路都已被建，或本时代不能建';
+            }
+            case 'develop': {
+                const iron = s.findIronSource(me);
+                if (!iron.length) return base;
+                if (!iron[0].free && iron[0].price > money) return `资金不足：发展要 1 铁（铁市场 £${iron[0].price}），你只有 £${money}`;
+                return '玩家板上没有可发展的板块（剩下的最低级板块都不可发展）';
+            }
+            case 'sell': {
+                const own = Object.entries(s.boardIndustries).filter(([, t]) => t.playerId === me && !t.flipped && isSellableIndustry(t.type));
+                if (!own.length) return '没有可销售的产业：你在版图上没有未翻面的棉纺厂/制造厂/陶瓷厂';
+                const linked = own.filter(([k, t]) => L.getSellMerchantsFor(me, k.split('_')[0], t.type).length);
+                if (!linked.length) return `没有连到收购商人：你的${own.map(([k, t]) => locationName(k.split('_')[0]) + indName(t.type)).join('、')}都没有连到收购该产品的商人`;
+                return '啤酒不足：可卖的产业需要啤酒，但相连的酿酒厂和商人都没有可用的啤酒';
+            }
+            case 'loan': return `收入太低：当前收入 ${s.getIncomeLevel(me)}，贷款要降 3 级，不能低于 -10`;
+            case 'scout': return /3 张/.test(base) ? `${base}（你只有 ${p.hand.length} 张）` : base;
+            default: return base;
+        }
     }
 
     renderLog() {
@@ -517,6 +589,14 @@ class App {
                 title = ix.card == null ? '轮到你了' : `已选「${cardDisplayName(p.hand[ix.card])}」`;
                 hint = ix.card == null ? '① 选一张手牌，版图会高亮它能建的位置；② 或直接点版图上的金色位置；③ 也可点下方动作按钮。'
                     : (this.targetsWithCard(ix.card).length ? '点版图上高亮的位置建造，或点下方动作按钮用这张牌做其他动作。' : '这张牌现在不能建造，可点下方动作按钮用它做其他动作。');
+                {
+                    const main = ['build', 'network', 'sell', 'develop'];
+                    const r = Object.fromEntries(ACT.map(([a]) => [a, this.whyNot(a)]));
+                    if (main.every(a => r[a])) {
+                        const left = ['loan', 'scout', 'pass'].filter(a => !r[a]).map(a => ACT_NAME[a]);
+                        hint = `<b class="warn">现在只能${left.join('、')}。</b>` + main.map(a => `<div class="why">${ACT_NAME[a]}：${esc(r[a])}</div>`).join('');
+                    }
+                }
                 el.innerHTML = `<div class="ptitle">${esc(title)}</div><div class="hint">${hint}</div>` + (ix.card != null ? '<div class="btns"><button data-b="cancel">取消选牌</button></div>' : '');
                 return this.bindPanel();
             case 'build': {
@@ -548,7 +628,7 @@ class App {
                 const era = s.era;
                 title = era === 'canal' ? '建运河' : '建铁路';
                 const n = ix.links.length;
-                const name = id => { const c = CONNECTIONS.find(c => c.id === id); return c ? c.cities.map(locationName).join(' — ') : id; };
+                const name = id => { const c = CONNECTIONS.find(c => c.id === id); return c ? connName(c) : id; };
                 if (!n) body = '<div class="hint">点版图上高亮的连线（青色）。</div>';
                 else {
                     body = ix.links.map((id, k) => `<div class="row"><span>第 ${k + 1} 条</span><b>${esc(name(id))}</b></div>`).join('');
@@ -756,10 +836,10 @@ class App {
             text = `${locationName(cid)} · ${allowed.map(indName).join(' / ')}${opts.length ? `\n可建：${opts.map(t => `${indName(t.industryType)} ${t.tileData.level} 级 £${t.cost.total}`).join('，')}` : ''}`;
         } else if (hit.kind === 'link') {
             const c = CONNECTIONS.find(c => c.id === hit.connId);
-            if (c && hit.active) text = `${c.cities.map(locationName).join(' — ')}\n点击选择这条连线`;
+            if (c) text = `${connName(c)}${hit.active ? '\n点击选择这条连线' : ''}`;
         } else if (hit.kind === 'builtLink') {
             const c = CONNECTIONS.find(c => c.id === hit.connId), p = this.state.players[hit.link.playerId];
-            text = `${p.name} 的${hit.link.type === 'canal' ? '运河' : '铁路'}：${c ? c.cities.map(locationName).join(' — ') : ''}`;
+            text = `${p.name} 的${hit.link.type === 'canal' ? '运河' : '铁路'}：${connName(c)}`;
         } else if (hit.kind === 'merchant') {
             const md = MERCHANTS[hit.mt.location];
             const buys = { any: '任意产品', blank: '不收购', cottonMill: '棉布', manufacturer: '制造品', pottery: '陶瓷' }[hit.mt.buys];
@@ -769,9 +849,14 @@ class App {
         if (text) this.showTip(text, e.clientX, e.clientY); else this.hideTip();
     }
 
-    showTip(text, x, y) {
+    showTip(text, x, y, above = false) {
         const t = $('#tip'); t.textContent = text; t.hidden = false;
         const w = t.offsetWidth, h = t.offsetHeight;
+        if (above) {
+            t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x - w / 2)) + 'px';
+            t.style.top = Math.max(8, y - h) + 'px';
+            return;
+        }
         t.style.left = Math.min(window.innerWidth - w - 8, x + 16) + 'px';
         t.style.top = Math.min(window.innerHeight - h - 8, y + 16) + 'px';
     }
