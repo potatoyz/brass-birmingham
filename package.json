@@ -1,0 +1,9 @@
+{
+  "name": "brass-birmingham-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Online multiplayer rooms for the Brass: Birmingham fan adaptation",
+  "main": "server/index.js",
+  "scripts": { "start": "node server/index.js", "test": "node test/online-test.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}

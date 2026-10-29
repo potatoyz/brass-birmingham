@@ -14,6 +14,114 @@ class UIManager {
         this.pendingData = {}; // Data accumulated during multi-step actions
         this.gameLog = []; // Game log entries
         this.previousPlayerId = null; // Track player changes for transitions
+        // Online mode: the server owns the game; this client only renders a
+        // redacted copy and sends the chosen action.
+        this.online = null;   // OnlineClient instance when playing in a room
+        this.mySeat = null;   // seat/player id of this device (-1 = spectator)
+        this.waiting = false; // an action was sent and is awaiting the server
+        this.pendingBonusInfo = null;
+        this.lastEventId = 0;
+    }
+
+    // ---- online helpers ----------------------------------------------------
+    viewerId() {
+        if (this.online) return this.mySeat >= 0 ? this.mySeat : null;
+        return this.state.currentPlayerId;
+    }
+
+    viewer() {
+        const id = this.viewerId();
+        return id === null ? null : this.state.players[id];
+    }
+
+    canAct() {
+        if (!this.state || this.state.gameOver) return false;
+        if (this.online) {
+            return this.mySeat >= 0 && this.state.currentPlayerId === this.mySeat &&
+                !this.state.currentPlayer.isAI && !this.waiting && !this.pendingBonusInfo &&
+                this.online.connected;
+        }
+        return !this.state.currentPlayer.isAI;
+    }
+
+    initOnline(gameState, gameLogic, boardRenderer, client) {
+        this.online = client;
+        this.state = gameState;
+        this.logic = gameLogic;
+        this.renderer = boardRenderer;
+        this.bindEvents();
+    }
+
+    // Apply a snapshot pushed by the server (msg = { game, you, log, version, pendingBonus, event })
+    applyServerUpdate(gameState, msg) {
+        const prevPid = this.state ? this.state.currentPlayerId : null;
+        const versionChanged = msg.version !== this.lastVersion;
+        this.lastVersion = msg.version;
+        this.state = gameState;
+        this.logic.state = gameState;
+        this.mySeat = msg.you.seat;
+        this.waiting = false;
+        this.gameLog = msg.log || [];
+        this.renderLog();
+
+        if (versionChanged && this.selectedAction) {
+            this.selectedAction = null;
+            this.actionStep = 0;
+            this.pendingData = {};
+            this.selectedCard = null;
+            this.renderer.clearHighlights();
+            this.closeModal();
+        }
+
+        const handLabel = document.getElementById('hand-label');
+        const matLabel = document.getElementById('mat-label');
+        if (handLabel) handLabel.textContent = this.mySeat >= 0 ? '你的手牌' : '观战中';
+        if (matLabel) matLabel.textContent = this.mySeat >= 0 ? '你的产业板块' : '';
+
+        this.refresh();
+        this.setWaitingOverlay(!this.canAct());
+
+        const cur = this.state.currentPlayer;
+        if (!this.state.gameOver && prevPid !== null && cur.id !== prevPid &&
+                cur.id === this.mySeat && !cur.isAI) {
+            this.showTurnTransition(cur);
+        }
+
+        // Gloucester free-develop bonus waiting on this player
+        const pb = msg.pendingBonus;
+        const mine = pb && pb.count > 0 && Array.isArray(pb.types);
+        this.pendingBonusInfo = mine ? pb : null;
+        if (mine) {
+            this.resolveDevelopBonuses(this.mySeat, 1, () => {});
+        }
+
+        // Era scoring / game over events (show each one once per device)
+        const ev = msg.event;
+        if (ev && ev.id > this.lastEventId) {
+            this.lastEventId = ev.id;
+            if (this.online.markEventSeen(ev.id)) {
+                if (ev.kind === 'scoring') this.showScoring(ev.title, ev.scores);
+                else if (ev.kind === 'gameover') this.showGameOver(ev.scores);
+            }
+        }
+    }
+
+    sendOnlineAction(action, pendingData, cardIndex) {
+        this.waiting = true;
+        this.online.send({ t: 'action', action, pendingData, cardIndex, version: this.lastVersion });
+        this.selectedAction = null;
+        this.actionStep = 0;
+        this.pendingData = {};
+        this.selectedCard = null;
+        this.renderer.clearHighlights();
+        this.updateHand();
+        this.updateActionButtons();
+        this.updatePhaseBar();
+        this.setWaitingOverlay(true);
+    }
+
+    setWaitingOverlay(active) {
+        document.getElementById('game-screen').classList.toggle('online-waiting', active);
     }
 
     init(gameState, gameLogic, boardRenderer) {
@@ -88,6 +196,7 @@ class UIManager {
         this.updateMarkets();
         this.updatePhaseBar();
         this.renderer.fullUpdate(this.state);
+        if (this.online && this.online.onRefresh) this.online.onRefresh();
     }
 
     updateTopBar() {
@@ -148,8 +257,9 @@ class UIManager {
         const container = document.getElementById('player-hand');
         container.innerHTML = '';
 
-        const player = this.state.currentPlayer;
-        const playerId = this.state.currentPlayerId;
+        const player = this.viewer();
+        const playerId = this.viewerId();
+        if (!player) return; // spectator: no hand to show
         const inCardSelectMode = this.actionStep > 0 && this.selectedAction;
 
         // Get valid card indices for current action
@@ -280,9 +390,16 @@ class UIManager {
 
     updateActionButtons() {
         const playerId = this.state.currentPlayerId;
+        const myTurn = this.canAct();
 
         document.querySelectorAll('.action-btn').forEach(btn => {
             const action = btn.dataset.action;
+            if (!myTurn && this.online) {
+                btn.disabled = true;
+                btn.classList.remove('active');
+                btn.title = this.mySeat >= 0 ? '等待其他玩家行动' : '观战中';
+                return;
+            }
             const canDo = this.logic.canPerformAction(action, playerId);
             btn.disabled = !canDo;
             btn.classList.toggle('active', this.selectedAction === action);
@@ -311,7 +428,9 @@ class UIManager {
         const container = document.getElementById('player-mat');
         container.innerHTML = '';
 
-        const remaining = this.state.getRemainingTiles(this.state.currentPlayerId);
+        const matPlayerId = this.viewerId();
+        if (matPlayerId === null) return;
+        const remaining = this.state.getRemainingTiles(matPlayerId);
 
         for (const [type, data] of Object.entries(remaining)) {
             const display = INDUSTRY_DISPLAY[type];
@@ -319,7 +438,7 @@ class UIManager {
             div.className = 'mat-industry';
 
             let tilesHtml = '';
-            const allTiles = this.state.currentPlayer.industryTiles[type];
+            const allTiles = this.state.players[matPlayerId].industryTiles[type];
             const chips = typeof BoardAssets !== 'undefined' && BoardAssets.tilesReady();
             const iconMarkup = chips ? null : IndustryIcons.renderMarkup(type, 12, 'full');
             allTiles.forEach(tile => {
@@ -539,7 +658,7 @@ class UIManager {
 
         nameEl.textContent = player.name;
         nameEl.style.color = player.color;
-        if (subtitleEl) subtitleEl.textContent = player.isAI ? 'AI Turn' : 'Your Turn';
+        if (subtitleEl) subtitleEl.textContent = this.online ? '轮到你了' : (player.isAI ? 'AI Turn' : 'Your Turn');
 
         overlay.classList.remove('hidden', 'fade-out');
 
@@ -558,7 +677,7 @@ class UIManager {
     // ========================================================================
 
     onCardClicked(index) {
-        if (this.state.currentPlayer.isAI) return;
+        if (!this.canAct()) return;
         if (this.selectedCard === index) {
             this.selectedCard = null;
         } else {
@@ -577,7 +696,7 @@ class UIManager {
     // ========================================================================
 
     onActionSelected(action) {
-        if (this.state.currentPlayer.isAI) return;
+        if (!this.canAct()) return;
         if (this.selectedAction === action) {
             this.cancelAction();
             return;
@@ -905,63 +1024,129 @@ class UIManager {
             this.cancelAction();
             return;
         }
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const byKey = {};
+        targets.forEach(t => { byKey[t.key] = t; t.sources = this.logic.getSellBeerSources(playerId, t.key); });
 
-        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Select industries to sell (you may sell multiple in one action). Consuming a merchant\'s beer barrel grants that merchant\'s bonus.</p>';
+        let html = '<p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Select industries to sell (you may sell multiple in one action). '
+            + '点选要出售的产业（可一次卖多个），再为每个产业选择用哪桶啤酒：自己的酿酒厂（不需相连）、相连的对手酿酒厂（用完会让对方翻面加收入），或所卖商人的啤酒（得到该商人的奖励）。</p>';
         html += '<div class="choice-list">';
         for (const target of targets) {
             const display = INDUSTRY_DISPLAY[target.tile.type];
             const cityName = CITIES[target.cityId]?.name || target.cityId;
-            const offerMerchantBeer = target.beerNeeded > 0 && target.merchantBeerAvailable;
             html += `
-                <div class="choice-item" data-key="${target.key}" data-selected="false">
+                <div class="choice-item sell-item" data-key="${target.key}" data-selected="false">
                     <div class="choice-item-icon">${display.icon}</div>
                     <div class="choice-item-text">
                         <div class="choice-item-name">${display.name} Lv${target.tile.tileData.level}</div>
                         <div class="choice-item-detail">${cityName} | VP: ${target.tile.tileData.vp} | Income: +${target.tile.tileData.income}
-                        ${target.beerNeeded > 0 ? ` | Beer: ${target.beerNeeded}` : ''}</div>
-                        ${offerMerchantBeer ? `
-                        <label class="choice-item-detail" style="display:flex;align-items:center;gap:5px;margin-top:4px;cursor:pointer;">
-                            <input type="checkbox" class="merchant-beer-cb" data-key="${target.key}" checked>
-                            Use merchant beer (claim bonus)
-                        </label>` : ''}
+                        ${target.beerNeeded > 0 ? ` | 啤酒 Beer: ${target.beerNeeded}` : ' | 不需要啤酒'}</div>
+                        <div class="sell-beer" data-key="${target.key}"></div>
                     </div>
                 </div>
             `;
         }
         html += '</div>';
 
-        const footer = '<button class="modal-btn modal-btn-primary" id="confirm-sell">Sell Selected</button>';
+        const footer = '<div id="sell-status" class="sell-status"></div><button class="modal-btn modal-btn-primary" id="confirm-sell">Sell Selected</button>';
         this.showModal('Sell Goods', html, null, footer);
 
-        const selectedKeys = new Set();
-        document.querySelectorAll('#modal-body .choice-item').forEach(item => {
+        const selected = [];   // keys, in the order they will be sold
+        const choice = {};     // key -> [sourceId | '']
+        const complete = k => (choice[k] || []).every(id => id);
+        const planFor = (auto) => selected.map(k => (complete(k) && k !== auto)
+            ? { key: k, beer: choice[k].slice() }
+            : { key: k, useMerchantBeer: true });
+        const statusEl = document.getElementById('sell-status');
+        const confirmBtn = document.getElementById('confirm-sell');
+
+        const validate = () => {
+            let msg = '', ok = false;
+            if (selected.length === 0) msg = '请至少选择一个产业';
+            else if (!selected.every(complete)) msg = '请为每个产业选好啤酒';
+            else {
+                const r = this.logic.resolveSellPlan(playerId, selected.map(k => ({ key: k, beer: choice[k].slice() })));
+                ok = r.ok;
+                msg = ok ? `可以出售 ${selected.length} 个产业` : r.zh;
+            }
+            statusEl.textContent = msg;
+            statusEl.classList.toggle('ok', ok);
+            confirmBtn.disabled = !ok;
+            return ok;
+        };
+
+        const render = () => {
+            // barrels used by every select, to show what is left on each source
+            const used = {};
+            for (const k of selected) for (const id of choice[k] || []) if (id) used[id] = (used[id] || 0) + 1;
+            document.querySelectorAll('#modal-body .sell-item').forEach(item => {
+                const k = item.dataset.key;
+                const on = selected.includes(k);
+                item.dataset.selected = on ? 'true' : 'false';
+                item.style.borderColor = on ? 'var(--accent-gold)' : '';
+                const box = item.querySelector('.sell-beer');
+                const t = byKey[k];
+                if (!on || t.beerNeeded === 0) { box.innerHTML = ''; return; }
+                let h = '';
+                (choice[k] || []).forEach((cur, u) => {
+                    h += `<label class="sell-beer-row">第 ${u + 1} 桶 <select data-key="${k}" data-unit="${u}"><option value="">— 选择啤酒 —</option>`;
+                    for (const src of t.sources) {
+                        const left = src.count - (used[src.id] || 0) + (cur === src.id ? 1 : 0);
+                        const dis = left <= 0 && cur !== src.id ? ' disabled' : '';
+                        h += `<option value="${src.id}"${cur === src.id ? ' selected' : ''}${dis}>${esc(src.labelZh)}（剩 ${Math.max(0, left - (cur === src.id ? 1 : 0))} 桶）</option>`;
+                    }
+                    h += '</select></label>';
+                });
+                box.innerHTML = h;
+            });
+            document.querySelectorAll('#modal-body .sell-beer select').forEach(sel => {
+                sel.addEventListener('click', e => e.stopPropagation());
+                sel.addEventListener('change', () => {
+                    choice[sel.dataset.key][+sel.dataset.unit] = sel.value;
+                    render();
+                });
+            });
+            validate();
+        };
+
+        document.querySelectorAll('#modal-body .sell-item').forEach(item => {
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.merchant-beer-cb')) return; // checkbox toggle, not row select
+                if (e.target.closest('.sell-beer')) return; // beer picker, not row select
                 const key = item.dataset.key;
-                if (selectedKeys.has(key)) {
-                    selectedKeys.delete(key);
-                    item.style.borderColor = '';
+                const idx = selected.indexOf(key);
+                if (idx >= 0) {
+                    selected.splice(idx, 1);
+                    delete choice[key];
                 } else {
-                    selectedKeys.add(key);
-                    item.style.borderColor = 'var(--accent-gold)';
+                    selected.push(key);
+                    const need = byKey[key].beerNeeded;
+                    choice[key] = Array(need).fill('');
+                    // Sensible default: the engine's pick (merchant beer first for
+                    // the free bonus, then own breweries, then opponents') from
+                    // what the other selected sales leave
+                    const r = this.logic.resolveSellPlan(playerId, planFor(key));
+                    if (r.ok) for (const st of r.steps) if (!complete(st.key) || st.key === key) choice[st.key] = st.beer.slice();
                 }
+                render();
             });
         });
 
-        document.getElementById('confirm-sell').addEventListener('click', () => {
-            if (selectedKeys.size === 0) {
+        confirmBtn.addEventListener('click', () => {
+            if (selected.length === 0) {
                 this.showToast('Select at least one industry to sell', 'warning');
                 return;
             }
-            this.pendingData.sellPlan = [...selectedKeys].map(key => {
-                const cb = document.querySelector(`.merchant-beer-cb[data-key="${key}"]`);
-                return { key, useMerchantBeer: cb ? cb.checked : false };
-            });
+            if (!validate()) {
+                this.showToast(statusEl.textContent, 'warning');
+                return;
+            }
+            this.pendingData.sellPlan = selected.map(k => ({ key: k, beer: choice[k].slice() }));
             this.closeModal();
             this.actionStep = 1;
             this.updatePhaseBar();
             this.updateHand();
         });
+        render();
     }
 
     // ========================================================================
@@ -1004,6 +1189,35 @@ class UIManager {
 
         const playerId = this.state.currentPlayerId;
         const cardIndex = this.selectedCard;
+
+        if (this.online) {
+            const a = this.selectedAction;
+            const pd = this.pendingData || {};
+            if (a === ACTIONS.SCOUT) {
+                if (!pd.scoutCards) pd.scoutCards = [];
+                if (pd.scoutCards.includes(cardIndex)) {
+                    this.selectedCard = null;
+                    this.updateHand();
+                    return;
+                }
+                pd.scoutCards.push(cardIndex);
+                if (pd.scoutCards.length < 3) {
+                    this.selectedCard = null;
+                    this.updatePhaseBar();
+                    this.updateHand();
+                    return;
+                }
+                this.sendOnlineAction(a, { scoutCards: pd.scoutCards.slice() }, null);
+                return;
+            }
+            let data = {};
+            if (a === ACTIONS.BUILD) data = { cityId: pd.cityId, slotIndex: pd.slotIndex, industryType: pd.industryType };
+            else if (a === ACTIONS.NETWORK) data = { connectionId: pd.connectionId, connectionId2: pd.connectionId2 || null };
+            else if (a === ACTIONS.DEVELOP) data = { industryType1: pd.industryType1, industryType2: pd.industryType2 || null };
+            else if (a === ACTIONS.SELL) data = { sellPlan: pd.sellPlan || [] };
+            this.sendOnlineAction(a, data, cardIndex);
+            return;
+        }
 
         switch (this.selectedAction) {
             case ACTIONS.BUILD: {
@@ -1124,7 +1338,12 @@ class UIManager {
     // Gloucester merchant bonus: modal chain letting a human pick which
     // tile(s) to remove from their mat (or skip), then continue the turn.
     resolveDevelopBonuses(playerId, count, done) {
-        const types = this.logic.getDevelopableTypes(playerId);
+        let types = this.logic.getDevelopableTypes(playerId);
+        if (this.online && this.pendingBonusInfo) {
+            const allowed = this.pendingBonusInfo.types;
+            types = types.filter(t => allowed.includes(t.type));
+            if (types.length === 0) { this.online.send({ t: 'bonus', type: 'skip' }); return; }
+        }
         if (count <= 0 || types.length === 0) {
             this.closeModal();
             done();
@@ -1152,6 +1371,13 @@ class UIManager {
         document.querySelectorAll('#modal-body .choice-item').forEach(item => {
             item.addEventListener('click', () => {
                 const type = item.dataset.type;
+                if (this.online) {
+                    this.closeModal();
+                    this.pendingBonusInfo = null;
+                    this.waiting = true;
+                    this.online.send({ t: 'bonus', type });
+                    return;
+                }
                 if (type === 'skip') {
                     this.closeModal();
                     done();
@@ -1226,6 +1452,7 @@ class UIManager {
     // ========================================================================
 
     runAITurnLoop() {
+        if (this.online) return; // the server runs AI seats
         if (this.state.gameOver) return;
         const player = this.state.currentPlayer;
         if (!player.isAI) {
@@ -1260,7 +1487,7 @@ class UIManager {
     // ========================================================================
 
     onBoardClick(e) {
-        if (this.state.currentPlayer.isAI) return;
+        if (!this.canAct()) return;
         const target = e.target.closest('.industry-slot, .connection-line, .brewery-farm, .merchant-group');
         if (!target) return;
 
@@ -1407,8 +1634,14 @@ class UIManager {
         document.getElementById('final-scores').innerHTML = html;
         overlay.classList.remove('hidden');
 
-        document.getElementById('new-game-btn').onclick = () => {
+        const newGameBtn = document.getElementById('new-game-btn');
+        newGameBtn.textContent = this.online ? (this.online.isHost ? '回到房间再来一局' : '关闭') : 'New Game';
+        newGameBtn.onclick = () => {
             overlay.classList.add('hidden');
+            if (this.online) {
+                if (this.online.isHost) this.online.send({ t: 'restart' });
+                return;
+            }
             document.getElementById('game-screen').classList.remove('active');
             document.getElementById('setup-screen').classList.add('active');
         };

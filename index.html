@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brass: Birmingham</title>
-    <link rel="stylesheet" href="css/style.css?v=5">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:,">
+    <title>Brass: Birmingham · 工业革命：伯明翰（联机版）</title>
+    <link rel="stylesheet" href="css/style.css?v=6">
+    <link rel="stylesheet" href="css/online.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 </head>
 <body>
     <!-- Setup Screen -->
@@ -15,6 +17,20 @@
             <h2 class="game-subtitle">Birmingham</h2>
             <p class="game-tagline">An Economic Strategy Game &middot; 1770&ndash;1870</p>
 
+            <!-- Online play (rooms) -->
+            <div class="online-panel" id="online-panel">
+                <div class="online-panel-title">联机对战 · 多设备开房间</div>
+                <input type="text" id="online-name" class="online-input" maxlength="16" placeholder="你的昵称">
+                <button id="create-room-btn" class="btn-primary">创建房间</button>
+                <div class="online-join-row">
+                    <input type="text" id="join-code" class="online-input" maxlength="4" placeholder="房间号（4 位）" autocomplete="off">
+                    <button id="join-room-btn" class="online-btn">加入房间</button>
+                </div>
+                <div id="online-msg" class="online-msg"></div>
+            </div>
+
+            <details class="local-mode">
+            <summary>本机同屏模式（一台设备轮流玩）</summary>
             <div class="setup-form">
                 <div class="form-group">
                     <label>Number of Players</label>
@@ -32,6 +48,31 @@
 
                 <button id="start-game-btn" class="btn-primary">Begin Game</button>
             </div>
+            </details>
+        </div>
+    </div>
+
+    <!-- Online Lobby Screen -->
+    <div id="lobby-screen" class="screen">
+        <div class="setup-container lobby-container">
+            <div class="lobby-title">房间 <span id="lobby-code" class="lobby-code"></span></div>
+            <div class="lobby-share">
+                <input type="text" id="lobby-link" class="online-input" readonly>
+                <button id="copy-link-btn" class="online-btn">复制邀请链接</button>
+            </div>
+            <div class="lobby-count" id="lobby-count">
+                <span>玩家人数</span>
+                <button class="lobby-count-btn" data-n="2">2</button>
+                <button class="lobby-count-btn" data-n="3">3</button>
+                <button class="lobby-count-btn" data-n="4">4</button>
+            </div>
+            <div id="lobby-seats"></div>
+            <div id="lobby-spectators" class="lobby-hint"></div>
+            <div class="lobby-actions">
+                <button id="lobby-start-btn" class="btn-primary">开始游戏</button>
+                <button id="lobby-leave-btn" class="online-btn">离开房间</button>
+            </div>
+            <div id="lobby-hint" class="lobby-hint"></div>
         </div>
     </div>
 
@@ -46,6 +87,13 @@
             <div class="turn-info">
                 <span id="current-player-label"></span>
                 <span id="actions-remaining-label"></span>
+            </div>
+            <div id="online-bar" class="hidden">
+                <span class="online-dot" id="online-dot"></span>
+                <span>房间 <b id="online-bar-code"></b></span>
+                <button class="online-mini-btn hidden" id="reclaim-btn">收回控制</button>
+                <button class="online-mini-btn" id="seats-btn">玩家</button>
+                <button class="online-mini-btn" id="exit-room-btn">退出</button>
             </div>
             <div class="market-summary">
                 <div class="market-item" id="coal-market-summary">
@@ -125,7 +173,7 @@
         <!-- Bottom Panel - Player Hand & Actions -->
         <div id="bottom-panel">
             <div id="hand-container">
-                <div class="hand-label">Your Hand</div>
+                <div class="hand-label" id="hand-label">Your Hand</div>
                 <div id="player-hand"></div>
             </div>
             <div id="action-panel">
@@ -163,7 +211,7 @@
             </div>
             <!-- Player Mat (industry tiles remaining) -->
             <div id="player-mat-container">
-                <div class="mat-label">Your Industries</div>
+                <div class="mat-label" id="mat-label">Your Industries</div>
                 <div id="player-mat"></div>
             </div>
         </div>
@@ -214,12 +262,13 @@
     <script src="js/gameData.js?v=3"></script>
     <script src="js/industryIcons.js?v=3"></script>
     <script src="js/gameState.js?v=3"></script>
-    <script src="js/gameLogic.js?v=3"></script>
-    <script src="js/aiPlayer.js?v=3"></script>
+    <script src="js/gameLogic.js?v=4"></script>
+    <script src="js/aiPlayer.js?v=4"></script>
     <script src="js/actionIcons.js?v=3"></script>
     <script src="js/boardAssets.js?v=3"></script>
     <script src="js/boardRenderer.js?v=3"></script>
-    <script src="js/uiManager.js?v=3"></script>
-    <script src="js/main.js?v=3"></script>
+    <script src="js/uiManager.js?v=5"></script>
+    <script src="js/online.js?v=1"></script>
+    <script src="js/main.js?v=4"></script>
 </body>
 </html>

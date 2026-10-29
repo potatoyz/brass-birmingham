@@ -306,10 +306,21 @@ const AIPlayer = (() => {
 
         // Drink merchant beer whenever it's on offer: the bonus is free and
         // it spares brewery barrels for other sales.
-        const sellPlan = ranked.map(r => ({ key: r.t.key, useMerchantBeer: r.t.merchantBeerAvailable }));
-        const totalVP = ranked.reduce((s, r) => s + r.t.tile.tileData.vp, 0);
-        const totalIncome = ranked.reduce((s, r) => s + r.t.tile.tileData.income, 0);
-        const totalBonus = ranked.reduce((s, r) => s + r.bonus, 0);
+        // Tiles are added best-first while the whole batch can still be
+        // paid for in beer (selling is all-or-nothing).
+        const sellPlan = [];
+        const chosen = [];
+        for (const r of ranked) {
+            const entry = { key: r.t.key, useMerchantBeer: r.t.merchantBeerAvailable };
+            if (logic.resolveSellPlan(playerId, sellPlan.concat([entry])).ok) {
+                sellPlan.push(entry);
+                chosen.push(r);
+            }
+        }
+        if (sellPlan.length === 0) return null;
+        const totalVP = chosen.reduce((s, r) => s + r.t.tile.tileData.vp, 0);
+        const totalIncome = chosen.reduce((s, r) => s + r.t.tile.tileData.income, 0);
+        const totalBonus = chosen.reduce((s, r) => s + r.bonus, 0);
 
         const player = state.players[playerId];
         const cardIndex = pickCardIndex(logic, playerId, ACTIONS.SELL, null, player);

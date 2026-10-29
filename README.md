@@ -6,6 +6,100 @@ A digital adaptation of the award-winning board game by Roxley Games. Build your
 
 > **Note:** This is an unofficial fan project. [Brass: Birmingham](https://roxley.com/products/brass-birmingham) is designed by Gavan Brown, Matt Tolman, and Martin Wallace, published by Roxley Games. Please support the original by purchasing the physical game.
 
+## 联机版说明（本 fork 的改动） / Online fork
+
+> 本仓库 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)，在原版"同屏轮流"玩法之外加入了**多人多设备联机房间**，并修复了原版**卖货（Sell）啤酒**相关的两个规则问题。原版内容、致谢与"非官方粉丝作品"声明见下文，保持不变。
+
+### 联机房间
+
+- **开房 / 加入**：首页填昵称 →「创建房间」得到 4 位房间号和邀请链接（`?room=CODE`）；朋友打开链接或输入房间号即可入座。
+- **大厅**：房主选择 2–4 人，空位可设为 AI（简单 / 普通 / 困难），也可移出玩家；人齐后房主开始游戏。
+- **服务端权威**：所有动作在服务器上用原版规则引擎（`gameState` / `gameLogic` / `aiPlayer`）校验并执行，非法操作被拒绝且不改动状态；AI 也在服务端运行。
+- **隐藏信息**：每个客户端只收到自己的手牌，他人手牌和牌堆内容不会下发。
+- **实时同步 + 断线重连**：WebSocket 实时推送；浏览器用 localStorage 里的令牌，刷新或断网后回到原座位。房主可把掉线玩家的座位交给 AI，之后再还给真人。
+- **持久化**：房间保存在 `DATA_DIR/rooms.json`（原子写入），服务重启后对局恢复；超过 7 天无活动的房间自动清理。
+- **同屏模式保留**：首页展开「本机同屏模式」即为原版玩法；直接用 `file://` 打开也仍是原版单机模式。
+
+### 卖货 / 啤酒修复（原版就存在的问题）
+
+1. **可以逐桶选择啤酒**：原版卖货窗口只有"是否用商人啤酒"一个勾选框，酿酒厂啤酒总是自动按"先自己、后对手"的顺序取，玩家无法选择（例如想用相连对手的啤酒保住自己的）。现在每桶啤酒都有下拉框可选：自己的酿酒厂（无需相连）、相连的对手酿酒厂、或所卖商人的啤酒（每次出售最多 1 桶，获得该商人奖励），并显示剩余桶数；仍提供合理的默认选择。服务器会校验每桶来源是否合法。
+2. **一次卖多个产业时整批校验**：原版只逐个检查产业"单独能不能卖"，执行时若前面的产业把啤酒用完，后面的会被静默跳过——行动照样算成功、牌照样弃掉，甚至会出现**喝了商人啤酒拿了奖励、产业却没卖出**的情况。现在执行前对整批做啤酒分配校验（自动选择时会搜索所有可行分配）；不可行就整批拒绝、不改动任何状态，并给出清楚的提示。AI 也只提交能付得起的批次。
+
+### 运行
+
+需要 Node.js 18+。
+
+```bash
+npm install
+npm start          # 默认 http://0.0.0.0:28788
+```
+
+环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `PORT` | `28788` | 网页与 WebSocket（`/ws`）共用的端口 |
+| `DATA_DIR` | `./data` | 房间存档目录（`rooms.json`） |
+| `AI_DELAY_MS` | `1100` | AI 每步之间的延迟（毫秒） |
+
+健康检查：`GET /health`。
+
+### 部署（systemd 示例）
+
+```ini
+# /etc/systemd/system/brass.service
+[Unit]
+Description=Brass Birmingham online server
+After=network.target
+
+[Service]
+User=brass
+WorkingDirectory=/opt/brass/app
+Environment=HOST=0.0.0.0
+Environment=PORT=28788
+Environment=DATA_DIR=/var/lib/brass
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/brass
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin brass
+sudo mkdir -p /opt/brass/app /var/lib/brass && sudo chown brass:brass /var/lib/brass
+# 把 index.html css js assets server package*.json 复制到 /opt/brass/app，然后：
+cd /opt/brass/app && sudo npm install --omit=dev
+sudo systemctl daemon-reload && sudo systemctl enable --now brass
+```
+
+记得在防火墙 / 云安全组放行该端口。更新时可先把旧目录改名为 `app.prev` 以便回滚。
+
+### 测试
+
+```bash
+node test/online-test.js      # 起一个临时服务器：3 真人 + 1 AI 打完整局，检查隐藏手牌、同步、断线重连、重启恢复、非法操作、卖货啤酒选择与整批校验
+node test/sell-scenarios.js   # 手工构造的卖货场景 + 全 AI 对局；JS_DIR=<原版 js 目录> 可对比原版行为
+```
+
+`BASE_URL=http://host:port MODE=smoke node test/online-test.js` 可对已部署的服务器做冒烟测试。
+
+### 已知限制
+
+- 服务器只提供 HTTP / WS；需要 HTTPS 请自行在前面加反向代理（并转发 `/ws` 的 WebSocket）。
+- 知道房间号的人都能进入观战（看不到任何人的手牌）。
+- 手机上可以玩，但棋盘较小，主要按桌面浏览器设计。
+- 新增界面为中文，原版游戏界面文字仍为英文。
+
+**English summary:** this fork adds online multi-device rooms (4-letter room codes, lobby with AI seats, server-authoritative rules reusing the original engine, hidden hands, WebSocket sync with reconnect, JSON persistence, 7-day idle cleanup; hotseat mode kept) and fixes two upstream Sell bugs: beer can now be chosen per barrel (own brewery, connected opponent brewery, or the merchant's barrel), and multi-tile sales are validated as a whole batch up front — previously later tiles were silently skipped once beer ran out, sometimes after a merchant bonus had already been granted. Run with `npm install && npm start` (env `HOST`, `PORT`=28788, `DATA_DIR`=./data); tests: `node test/online-test.js`, `node test/sell-scenarios.js`.
+
+---
+
 ## Screenshots
 
 <p align="center">
@@ -34,7 +128,7 @@ A digital adaptation of the award-winning board game by Roxley Games. Build your
 
 Compete as rival entrepreneurs in Birmingham and its surrounding towns. Establish canals and railways, develop industries, and outmaneuver your opponents across two distinct eras.
 
-**2-4 Players** · **Canal Era + Rail Era** · **Hotseat Multiplayer**
+**2-4 Players** · **Canal Era + Rail Era** · **Hotseat Multiplayer** · **Online Rooms (this fork)**
 
 ### Two Eras of Industry
 
@@ -257,6 +351,11 @@ fallback.
 | `js/boardRenderer.js` | SVG board: procedural terrain, frame + score track, calibration mode |
 | `js/uiManager.js` | Phase bar, card selection mode, game log, turn transitions, modals |
 | `js/main.js` | Entry point, setup screen |
+| `js/online.js` | (fork) Online client: rooms, lobby, reconnect |
+| `css/online.css` | (fork) Styles for the online UI and beer picker |
+| `server/index.js` | (fork) Node HTTP + WebSocket room server, persistence |
+| `server/engine.js` | (fork) Loads the browser rules engine in Node, validates actions |
+| `test/` | (fork) Online end-to-end test and sell/beer scenarios |
 
 ---
 

@@ -114,4 +114,5 @@ function startGame(numPlayers, playerNames, playerIsAI = []) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initSetup();
+    if (typeof Online !== 'undefined' && location.protocol !== 'file:') Online.init();
 });

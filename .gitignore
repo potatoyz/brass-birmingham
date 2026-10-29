@@ -1,7 +1,12 @@
 node_modules/
-package-lock.json
-package.json
 .DS_Store
 *.log
 screenshots/capture.js
 progress.md
+
+# online server runtime data (rooms.json) and local deploy leftovers
+data/
+rooms.json
+rooms.json.tmp*
+*.tgz
+.env

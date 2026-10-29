@@ -808,39 +808,216 @@ class GameLogic {
         }
     }
 
-    // sellPlan: array of { key, useMerchantBeer } — tiles are sold in order.
+    // ------------------------------------------------------------------
+    // Beer for selling (Brass rules): each barrel a sale drinks may come
+    // from the player's own breweries anywhere, an opponent's brewery
+    // connected to the selling tile, or the merchant tile the good is sold
+    // to (at most one merchant barrel per sale; it grants that merchant's
+    // bonus). The player chooses; the engine validates the whole batch.
+    // ------------------------------------------------------------------
+
+    // Barrels currently on the board, by source id ('b:<key>' / 'm:<index>').
+    beerStock() {
+        const stock = {};
+        const add = (key, tile) => {
+            if (tile && tile.type === INDUSTRY_TYPES.BREWERY && !tile.flipped && tile.resourceCubes > 0) {
+                stock['b:' + key] = tile.resourceCubes;
+            }
+        };
+        for (const [key, tile] of Object.entries(this.state.boardIndustries)) add(key, tile);
+        for (const [farmId, tile] of Object.entries(this.state.breweryFarmTiles || {})) add('farm_' + farmId, tile);
+        this.state.merchantTiles.forEach((mt, i) => { if (mt.hasBeer) stock['m:' + i] = 1; });
+        return stock;
+    }
+
+    // Human-readable name of a beer source; zh=true for the Chinese UI.
+    // viewerId marks "own" breweries.
+    beerSourceLabel(id, zh = false, viewerId = null) {
+        if (id.startsWith('m:')) {
+            const mt = this.state.merchantTiles[+id.slice(2)];
+            const md = mt && MERCHANTS[mt.location];
+            if (!md) return zh ? '商人啤酒' : 'Merchant beer';
+            const n = md.bonusAmount;
+            const bonus = zh
+                ? ({ vp: `+${n} 分`, money: `+£${n}`, income: `收入 +${n} 格`, develop: `免费开发 ${n} 次` }[md.bonusType] || '')
+                : ({ vp: `+${n} VP`, money: `+£${n}`, income: `+${n} income`, develop: 'free develop' }[md.bonusType] || '');
+            return zh ? `商人啤酒 · ${md.name}（奖励 ${bonus}）` : `${md.name} merchant beer (${bonus})`;
+        }
+        const key = id.slice(2);
+        const isFarm = key.startsWith('farm_');
+        const tile = isFarm ? this.state.breweryFarmTiles[key.slice(5)] : this.state.boardIndustries[key];
+        const where = isFarm
+            ? (BREWERY_FARMS[key.slice(5)] ? BREWERY_FARMS[key.slice(5)].name : key)
+            : (CITIES[key.split('_')[0]] ? CITIES[key.split('_')[0]].name : key);
+        const ownerId = tile ? tile.playerId : null;
+        const owner = ownerId !== null ? this.state.players[ownerId] : null;
+        if (zh) return ownerId === viewerId ? `自己的酿酒厂 · ${where}` : `${owner ? owner.name : '对手'} 的酿酒厂 · ${where}`;
+        return `${owner ? owner.name + "'s " : ''}brewery, ${where}`;
+    }
+
+    // Every beer source a sale of the tile at `key` may use, with the
+    // barrels left on it right now. Own breweries first, then opponents'
+    // connected breweries, then merchant beer (best bonus first).
+    getSellBeerSources(playerId, key) {
+        const tile = this.state.boardIndustries[key];
+        if (!tile) return [];
+        const [cityId] = key.split('_');
+        const merchantIndices = this.getSellMerchantsFor(playerId, cityId, tile.type);
+        const seen = new Set();
+        const out = [];
+        for (const s of this.state.findBeerSources(cityId, playerId, merchantIndices)) {
+            const id = s.type === 'merchant' ? 'm:' + s.index : 'b:' + s.key;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const src = { id, type: s.type, label: this.beerSourceLabel(id), labelZh: this.beerSourceLabel(id, true, playerId) };
+            if (s.type === 'merchant') {
+                src.index = s.index;
+                src.count = 1;
+                src.bonusValue = this.merchantBonusValue(this.state.merchantTiles[s.index]);
+            } else {
+                src.key = s.key;
+                const t = s.key.startsWith('farm_') ? this.state.breweryFarmTiles[s.key.slice(5)] : this.state.boardIndustries[s.key];
+                src.count = t ? t.resourceCubes : 0;
+                src.ownerId = t ? t.playerId : null;
+            }
+            out.push(src);
+        }
+        const rank = { own: 0, opponent: 1, merchant: 2 };
+        out.sort((a, b) => (rank[a.type] - rank[b.type]) || ((b.bonusValue || 0) - (a.bonusValue || 0)));
+        return out;
+    }
+
+    // Validate a whole sell plan up front and decide every barrel.
+    // sellPlan: [{ key, beer?: [sourceId...], useMerchantBeer? }]
+    //  - with `beer`: exactly the barrels the player chose (validated)
+    //  - without: picked automatically from what the explicit entries
+    //    leave (merchant beer first when useMerchantBeer, then own
+    //    breweries, then opponents'), searching all combinations so a
+    //    batch that can be paid for is never rejected.
+    // Returns { ok:true, steps:[{ key, tile, beer:[ids] }] } or
+    // { ok:false, message, zh } — nothing is changed either way.
+    resolveSellPlan(playerId, sellPlan) {
+        const bad = (message, zh) => ({ ok: false, message, zh: zh || message });
+        if (!Array.isArray(sellPlan) || sellPlan.length === 0) {
+            return bad('Select at least one industry to sell', '请选择要出售的产业');
+        }
+        const stock = this.beerStock();
+        const steps = [];
+        const autos = [];
+        const seenKeys = new Set();
+        const tileName = (tile, key) => {
+            const city = CITIES[key.split('_')[0]];
+            return { en: `${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level} in ${city ? city.name : key}`,
+                     zh: `${city ? city.name : key} 的 ${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level}` };
+        };
+
+        for (const entry of sellPlan) {
+            const key = entry && typeof entry.key === 'string' ? entry.key : null;
+            const tile = key ? this.state.boardIndustries[key] : null;
+            if (!tile || tile.playerId !== playerId || tile.flipped || !isSellableIndustry(tile.type)) {
+                return bad('Invalid industry in sell plan', '出售列表里有无效的产业');
+            }
+            if (seenKeys.has(key)) return bad('An industry is listed twice', '同一个产业选了两次');
+            seenKeys.add(key);
+            const [cityId] = key.split('_');
+            const name = tileName(tile, key);
+            if (this.getSellMerchantsFor(playerId, cityId, tile.type).length === 0) {
+                return bad(`${name.en}: no connected merchant buys it`, `${name.zh}：没有相连的商人收购`);
+            }
+            const need = tile.tileData.beersToSell || 0;
+            const legal = this.getSellBeerSources(playerId, key);
+            const step = { key, tile, need, legal, beer: [] };
+            steps.push(step);
+
+            if (Array.isArray(entry.beer)) {
+                if (entry.beer.length !== need) {
+                    return bad(`${name.en} needs ${need} beer (${entry.beer.length} chosen)`,
+                               `${name.zh} 需要 ${need} 桶啤酒（选了 ${entry.beer.length} 桶）`);
+                }
+                const legalIds = new Set(legal.map(s => s.id));
+                let merchantUsed = 0;
+                for (const id of entry.beer) {
+                    if (typeof id !== 'string' || !legalIds.has(id)) {
+                        return bad(`${name.en} cannot use that beer`, `${name.zh} 不能用这桶啤酒（不相连或不存在）`);
+                    }
+                    if (id.startsWith('m:') && ++merchantUsed > 1) {
+                        return bad(`${name.en}: at most one merchant barrel per sale`, `${name.zh}：每次出售最多用 1 桶商人啤酒`);
+                    }
+                    stock[id] = (stock[id] || 0) - 1;
+                    if (stock[id] < 0) {
+                        return bad(`Not enough beer left at ${this.beerSourceLabel(id)} for ${name.en}`,
+                                   `啤酒不够：${this.beerSourceLabel(id, true, playerId)} 已被本次其它出售用完，${name.zh} 卖不了`);
+                    }
+                }
+                step.beer = entry.beer.slice();
+            } else if (need > 0) {
+                const pref = legal.filter(s => entry.useMerchantBeer || s.type !== 'merchant')
+                    .sort((a, b) => entry.useMerchantBeer
+                        ? ((a.type === 'merchant' ? 0 : 1) - (b.type === 'merchant' ? 0 : 1))
+                        : 0)
+                    .map(s => s.id);
+                autos.push({ step, pref, name });
+            }
+        }
+
+        // Auto-pick the remaining barrels: depth-first, preferred order first
+        const stockIds = Object.keys(stock);
+        const failed = new Set(); // (tile index, barrels left) states known to be dead ends
+        const assign = (ai) => {
+            if (ai === autos.length) return true;
+            const memo = ai + '|' + stockIds.map(id => stock[id]).join(',');
+            if (failed.has(memo)) return false;
+            if (assignTile(ai)) return true;
+            failed.add(memo);
+            return false;
+        };
+        const assignTile = (ai) => {
+            const { step, pref } = autos[ai];
+            const pick = (unit, from, merchantUsed) => {
+                if (unit === step.need) return assign(ai + 1);
+                for (let p = from; p < pref.length; p++) {
+                    const id = pref[p];
+                    if ((stock[id] || 0) <= 0) continue;
+                    const isM = id.startsWith('m:');
+                    if (isM && merchantUsed) continue;
+                    stock[id]--; step.beer.push(id);
+                    if (pick(unit + 1, p, merchantUsed || isM)) return true;
+                    stock[id]++; step.beer.pop();
+                }
+                return false;
+            };
+            return pick(0, 0, false);
+        };
+        if (!assign(0)) {
+            if (autos.length === 1 && sellPlan.length === 1) {
+                const { step, name } = autos[0];
+                return bad(`Not enough beer to sell ${name.en} (needs ${step.need})`, `啤酒不够，${name.zh} 卖不了（需要 ${step.need} 桶）`);
+            }
+            return bad('Not enough beer for all the selected industries together — sell fewer', '所选产业加起来啤酒不够，请少选几个');
+        }
+        return { ok: true, steps };
+    }
+
+    // sellPlan: see resolveSellPlan. All-or-nothing: if any tile in the
+    // batch cannot be paid for, nothing is sold and nothing is consumed.
     // options.autoResolveDevelop: AI resolves Gloucester develop bonuses
     // immediately; for humans the count is returned for the UI to resolve.
     executeSell(playerId, sellPlan, cardIndex, options = {}) {
+        const plan = this.resolveSellPlan(playerId, sellPlan);
+        if (!plan.ok) return { success: false, message: plan.message, zh: plan.zh };
+
         const player = this.state.players[playerId];
         const results = [];
         let pendingDevelopBonuses = 0;
 
-        for (const entry of sellPlan) {
-            const key = entry.key;
-            const tile = this.state.boardIndustries[key];
-            if (!tile || tile.playerId !== playerId || tile.flipped) continue;
-
-            const [cityId] = key.split('_');
-            const merchantIndices = this.getSellMerchantsFor(playerId, cityId, tile.type);
-            if (merchantIndices.length === 0) continue; // no merchant accepts this good
-
-            let beerRemaining = tile.tileData.beersToSell || 0;
+        for (const step of plan.steps) {
+            const { key, tile } = step;
             const notes = [];
-
-            // Merchant beer first, if requested: pick the best-bonus merchant
-            // with a barrel among those this tile is selling to
-            if (beerRemaining > 0 && entry.useMerchantBeer) {
-                const withBeer = merchantIndices
-                    .filter(i => this.state.merchantTiles[i].hasBeer)
-                    .sort((a, b) => this.merchantBonusValue(this.state.merchantTiles[b]) -
-                                    this.merchantBonusValue(this.state.merchantTiles[a]));
-                if (withBeer.length > 0) {
-                    const mt = this.state.merchantTiles[withBeer[0]];
-                    mt.hasBeer = false;
-                    beerRemaining--;
-
+            for (const id of step.beer) {
+                if (id.startsWith('m:')) {
                     // Consuming a merchant's beer grants that location's bonus
+                    const mt = this.state.merchantTiles[+id.slice(2)];
+                    mt.hasBeer = false;
                     const merchData = MERCHANTS[mt.location];
                     switch (merchData.bonusType) {
                         case 'vp':
@@ -865,15 +1042,9 @@ class GameLogic {
                             }
                             break;
                     }
-                }
-            }
-
-            // Remaining beer from breweries (own anywhere, opponents connected)
-            if (beerRemaining > 0) {
-                const beerSources = this.state.findBeerSources(cityId, playerId, null);
-                if (beerSources.length < beerRemaining) continue; // can't pay beer; skip tile
-                for (let i = 0; i < beerRemaining; i++) {
-                    this.state.consumeResource(beerSources[i].key);
+                } else {
+                    notes.push(`beer: ${this.beerSourceLabel(id)}`);
+                    this.state.consumeResource(id.slice(2));
                 }
             }
 
@@ -883,10 +1054,6 @@ class GameLogic {
             let line = `Sold ${INDUSTRY_DISPLAY[tile.type].name} Lv${tile.tileData.level}`;
             if (notes.length) line += ` [${notes.join('; ')}]`;
             results.push(line);
-        }
-
-        if (results.length === 0) {
-            return { success: false, message: 'Nothing could be sold' };
         }
 
         // Discard card
