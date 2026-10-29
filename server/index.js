@@ -553,7 +553,7 @@ function load() {
             // Nobody is connected right after a restart. Keep a persisted idle
             // clock; rooms that were active (or saved by an older version)
             // start counting from boot.
-            if (typeof r.emptySince !== 'number') r.emptySince = BOOT_AT;
+            if (typeof r.emptySince !== 'number') { r.emptySince = BOOT_AT; scheduleSave(); }
             rooms.set(r.code, r);
         }
         console.log(`loaded ${rooms.size} rooms`);
