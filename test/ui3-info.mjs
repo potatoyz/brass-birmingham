@@ -49,6 +49,13 @@ const check = () => page.evaluate(() => {
         firstLogNewest: (a.msg.log[0] || {}).ts >= (a.msg.log[a.msg.log.length - 1] || {}).ts,
         oppIdx: document.querySelectorAll('.opp .oi').length, oppIdxVisible: [...document.querySelectorAll('.opp .oi')].some(e => e.offsetParent),
         minFont: Math.min(...fs),
+        rects: Object.fromEntries(['#side-right', '#info-l', '#info-r', '#hud', '#opps', '#toolbar', '#dock', '#hand', '#zoom-ctl', '#annot-ctl'].map(sel => {
+            const e = document.querySelector(sel); if (!e || !e.offsetParent && getComputedStyle(e).position !== 'fixed') return [sel, null];
+            const q = e.getBoundingClientRect(); return [sel, q.width ? { l: q.left, t: q.top, r: q.right, b: q.bottom } : null];
+        })),
+        tileW: (document.querySelector('#mat .mimg') || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width,
+        costFont: parseFloat(getComputedStyle(document.querySelector('#mat .mcost') || document.body).fontSize),
+        vw: innerWidth, vh: innerHeight,
     };
 });
 let c = await check();
@@ -61,13 +68,34 @@ ok('status mix done/cur/wait', c.status.includes('done') && c.status.includes('c
 ok('panels sit beside the board without covering it', c.lr.r <= c.board.left + 1 && c.rr.l >= c.board.right - 1 && c.board.left - c.lr.r < 40 && c.rr.l - c.board.right < 40, JSON.stringify({ lr: c.lr, rr: c.rr, b: c.board }));
 ok('persistent log docked with timestamps, newest first', c.dockN > 3 && c.logTs >= c.dockN && c.firstLogNewest);
 ok('font size ≥ 14px in panels and chips (excl. colour-badge glyphs)', c.minFont >= 14, `min ${c.minFont}`);
+const hit = (a, b) => a && b && a.l < b.r - 1 && a.r > b.l + 1 && a.t < b.b - 1 && a.b > b.t + 1;
+const brd = c => ({ l: c.board.left, r: c.board.right, t: c.board.top, b: c.board.bottom });
+{
+    const sr = c.rects['#side-right'];
+    ok('next-tile panel hugs the board right edge', sr && sr.l >= c.board.right - 1 && sr.l - c.board.right < 40, JSON.stringify({ sr, boardR: c.board.right }));
+    ok('next-tile panel shares the column under next-round box', sr && Math.abs(sr.l - c.rects['#info-r'].l) < 2 && sr.t >= c.rects['#info-r'].b);
+    const others = ['#info-l', '#info-r', '#hud', '#opps', '#toolbar', '#dock', '#hand', '#zoom-ctl', '#annot-ctl'].filter(k => hit(sr, c.rects[k]));
+    ok('next-tile panel overlaps no other panel nor the board', !others.length && !hit(sr, brd(c)), others.join(','));
+    ok('next-tile panel fully inside viewport', sr && sr.l >= 0 && sr.t >= 0 && sr.r <= c.vw && sr.b <= c.vh);
+    ok('next-tile panel enlarged (tile ≥ 80px, cost font ≥ 18px)', c.tileW >= 80 && c.costFont >= 18, `tile ${c.tileW.toFixed(0)}px, cost ${c.costFont}px`);
+    globalThis.wideTile = c.tileW;
+}
 await page.screenshot({ path: `${SHOTS}/ui3-1920.png` });
+await page.screenshot({ path: `${SHOTS}/ui4-1920.png` });
 
 await page.setViewport({ width: 1280, height: 800 }); await sleep(900);
 c = await check();
 ok('1280: falls back to compact (no side panels)', !c.wide);
 ok('1280: opponent chips show order index + spent', c.oppIdxVisible);
+{
+    const sr = c.rects['#side-right'];
+    ok('1280: next-tile panel hugs the board right edge', sr && sr.l >= c.board.right - 1 && sr.l - c.board.right < 40, JSON.stringify({ sr, boardR: c.board.right }));
+    const others = ['#hud', '#opps', '#toolbar', '#dock', '#hand', '#zoom-ctl', '#annot-ctl'].filter(k => hit(sr, c.rects[k]));
+    ok('1280: next-tile panel overlaps nothing, inside viewport', !others.length && sr.r <= c.vw && sr.b <= c.vh, others.join(','));
+}
+ok('1280: next-tile panel does not cover the board', !hit(c.rects['#side-right'], brd(c)), `tile ${c.tileW.toFixed(0)}px (wide ${globalThis.wideTile.toFixed(0)}px = ×${(globalThis.wideTile / c.tileW).toFixed(2)})`);
 await page.screenshot({ path: `${SHOTS}/ui3-1280.png` });
+await page.screenshot({ path: `${SHOTS}/ui4-1280.png` });
 await page.click('#btn-log'); await sleep(300);
 await page.screenshot({ path: `${SHOTS}/ui3-1280-log.png` });
 await page.click('#btn-log');
@@ -76,7 +104,9 @@ await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile
 c = await check();
 ok('phone: compact, order index visible', !c.wide && c.oppIdxVisible);
 ok('font size ≥ 14px (phone)', c.minFont >= 14, `min ${c.minFont}`);
+ok('phone: next-tile panel does not cover the board', !hit(c.rects['#side-right'], brd(c)));
 await page.screenshot({ path: `${SHOTS}/ui3-mobile.png` });
+await page.screenshot({ path: `${SHOTS}/ui4-mobile.png` });
 ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const fail = results.filter(r => !r.ok);

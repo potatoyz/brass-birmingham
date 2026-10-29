@@ -332,7 +332,7 @@ class App {
         const dock = $('#dock').getBoundingClientRect();
         document.body.style.setProperty('--dockh', Math.round(window.innerHeight - dock.top) + 'px');
         const bottomEdge = wide ? dock.top : Math.min(dock.top, $('#opps').getBoundingClientRect().top || dock.top);
-        const right = wide ? window.innerWidth - $('#side-right').getBoundingClientRect().left : 0;
+        const right = wide && !document.body.classList.contains('wide-info') && !document.body.classList.contains('near-side') ? window.innerWidth - $('#side-right').getBoundingClientRect().left : 0;
         this.board.insets = { top: top + 4, bottom: window.innerHeight - bottomEdge + 4, left: 0, right: Math.max(0, right) };
     }
 
@@ -618,14 +618,33 @@ class App {
         if (!this.board) return;
         const W = window.innerWidth, H = window.innerHeight, r = this.board.boardRect();
         const box = el => { const b = $(el).getBoundingClientRect(); return b.width ? b : null; };
-        const hud = box('#hud'), side = box('#side-right'), opps = box('#opps'), tb = box('#toolbar');
-        const gap = 14, minW = 230, maxW = 290;
-        const lAvail = r.left - gap - 64, rAvail = (side ? side.left : W) - gap - r.right - gap;
-        const wide = W >= 900 && lAvail >= minW && rAvail >= minW && r.bottom - r.top > 360;
+        const hud = box('#hud'), opps = box('#opps'), tb = box('#toolbar');
+        const gap = 14, minW = 230, maxW = 290, MATW = 410;
+        // Wide layout: the "next tile" panel leaves the screen edge and joins the
+        // right column, so the board is centred. Decide from the centred geometry
+        // (board size is height-bound here) so toggling cannot oscillate.
+        const sideFree = (W - (r.right - r.left)) / 2;
+        const wide = W >= 900 && sideFree - gap - 64 >= minW && sideFree - 2 * gap >= MATW && r.bottom - r.top > 360;
+        const was = document.body.classList.contains('wide-info');
         document.body.classList.toggle('wide-info', wide);
         $('#info-l').hidden = $('#info-r').hidden = !wide;
         this.infoWide = wide;
+        if (was !== wide) { this.layoutInsets(); requestAnimationFrame(() => this.board.resetView()); }
+        // Middle widths (e.g. 1280): no side columns, but the "next tile" panel
+        // still hugs the board's right edge, a bit larger (3 columns).
+        const NEARW = 290, near = !wide && W >= 900 && sideFree - 2 * gap >= NEARW && r.bottom - r.top > 300;
+        const wasNear = document.body.classList.contains('near-side');
+        document.body.classList.toggle('near-side', near);
+        if (wasNear !== near && was === wide) { this.layoutInsets(); requestAnimationFrame(() => this.board.resetView()); }
+        const sr = $('#side-right');
+        if (near) {
+            const top = Math.max(r.top, ($('#opps').getBoundingClientRect().bottom || 0) + 10), maxH = $('#dock').getBoundingClientRect().top - top - 10;
+            Object.assign(sr.style, { left: Math.round(r.right + gap) + 'px', top: Math.round(top) + 'px', width: NEARW + 'px', maxHeight: Math.round(maxH) + 'px' });
+            sr.classList.remove('mat4');
+            if (sr.scrollHeight > maxH + 1) sr.classList.add('mat4');   // short screens: 4 columns, 2 rows
+        } else if (!wide) Object.assign(sr.style, { left: '', top: '', width: '', maxHeight: '' });
         if (!wide) { this.renderLog(); this.renderPlayers(); return; }
+        const lAvail = r.left - gap - 64, rAvail = W - gap - r.right - gap;
         const over = (b, x0, x1) => b && x0 < b.right && x1 > b.left;
         const lw = Math.min(maxW, lAvail), lx = Math.round(r.left - gap - lw);
         let lt = Math.max(10, r.top);
@@ -638,6 +657,9 @@ class App {
         Object.assign($('#info-r').style, { left: rx + 'px', width: rw + 'px', top: Math.round(rt) + 'px', maxHeight: Math.round(H - rt - 10) + 'px' });
         $('#log-dock').dataset.key = '';
         this.renderInfo(); this.renderLog(); this.renderPlayers();
+        // "next tile" panel: same column, right under the next-round box
+        const st = Math.round($('#info-r').getBoundingClientRect().bottom + 10);
+        Object.assign($('#side-right').style, { left: rx + 'px', top: st + 'px', width: Math.min(MATW, rAvail) + 'px', maxHeight: Math.round(H - st - 10) + 'px' });
     }
 
     renderInfo() {
@@ -1146,24 +1168,45 @@ class App {
         const pv = $('#preview');
         pv.innerHTML = `${d.img ? `<img src="${d.img}" alt="" class="${d.kind === 'card' ? 'pv-card' : 'pv-tile'}">` : ''}<div class="pv-cap">${esc(d.cap || '')}</div>${d.info ? `<div class="pv-info">${esc(d.info).replace(/\n/g, '<br>')}</div>` : ''}`;
         pv.hidden = false;
-        const w = pv.offsetWidth, h = pv.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+        this.pvCur = d;
+        this.placePreview(d, at);
+        // The <img> box is reserved via CSS aspect-ratio, but re-place once it has
+        // loaded anyway (fonts / captions can still change the height).
+        const img = pv.querySelector('img');
+        if (img && !img.complete) img.addEventListener('load', () => { if (!pv.hidden && this.pvCur === d) this.placePreview(d, at); }, { once: true });
+        clearTimeout(this.pvTimer);
+        if (autoHideMs) this.pvTimer = setTimeout(() => this.hidePreview(), autoHideMs);
+    }
+    // Position the preview fully inside the viewport. For hand cards it goes
+    // beside the hand (bottom-aligned) when there is room, else centred above the
+    // hand; the image shrinks to fit the free height so it never covers the hand.
+    placePreview(d, at) {
+        const pv = $('#preview'), img = pv.querySelector('img'), vw = window.innerWidth, vh = window.innerHeight;
+        if (img) img.style.width = '';
+        let w = pv.offsetWidth, h = pv.offsetHeight;
+        const fit = maxH => {
+            if (!img || h <= maxH) return;
+            const extra = h - img.offsetHeight, ar = img.offsetWidth / Math.max(1, img.offsetHeight);
+            img.style.width = Math.max(60, Math.floor((maxH - extra) * ar)) + 'px';
+            w = pv.offsetWidth; h = pv.offsetHeight;
+        };
         let x, y;
-        if (d.anchor && d.anchor.closest('#hand')) {
-            // hand cards: beside the hand so the step panel above stays readable
-            const r = $('#hand').getBoundingClientRect();
-            x = r.left - w - 12; y = vh - h - 8;
-            if (x < 8) { x = r.right + 12; if (x + w > vw - 8) { x = vw / 2 - w / 2; y = r.top - h - 8; } }
+        const hand = d.anchor && d.anchor.closest('#hand') && $('#hand');
+        if (hand) {
+            const r = hand.getBoundingClientRect(), sideL = r.left - 20, sideR = vw - r.right - 20;
+            fit(vh - 16);
+            if (sideL >= w || sideR >= w) { x = sideL >= w ? r.left - w - 12 : r.right + 12; y = vh - h - 8; }
+            else { fit(r.top - 16); x = r.left + r.width / 2 - w / 2; y = r.top - h - 8; }
         } else if (d.anchor) {
+            fit(vh - 16);
             const r = d.anchor.getBoundingClientRect();
             x = r.left + r.width / 2 - w / 2; y = r.top - h - 12;
             if (y < 8) { x = r.right + 12; y = r.top + r.height / 2 - h / 2; }
-            if (x + w > vw - 8 && d.anchor) x = r.left - w - 12;
-        } else if (at) { x = at.x + 20; y = at.y - h / 2; if (x + w > vw - 8) x = at.x - w - 20; }
-        else { x = vw / 2 - w / 2; y = vh / 2 - h / 2; }
+            if (x + w > vw - 8) x = r.left - w - 12;
+        } else if (at) { fit(vh - 16); x = at.x + 20; y = at.y - h / 2; if (x + w > vw - 8) x = at.x - w - 20; }
+        else { fit(vh - 16); x = vw / 2 - w / 2; y = vh / 2 - h / 2; }
         pv.style.left = Math.max(8, Math.min(vw - w - 8, x)) + 'px';
         pv.style.top = Math.max(8, Math.min(vh - h - 8, y)) + 'px';
-        clearTimeout(this.pvTimer);
-        if (autoHideMs) this.pvTimer = setTimeout(() => this.hidePreview(), autoHideMs);
     }
     hidePreview() { $('#preview').hidden = true; }
 
