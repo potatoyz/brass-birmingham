@@ -1,0 +1,183 @@
+/* ============================================================================
+   Readability pass (Chinese UI): larger type everywhere, card/tile layering
+   fixes, the hover preview and the styled tooltip. Loaded after style.css and
+   online.css so it only overrides.
+   ============================================================================ */
+
+/* ---- Type scale: Chinese body copy is 14px or more ---- */
+#era-label { font-size: 19px; }
+#round-label, .turn-info, #actions-remaining-label, .market-summary { font-size: 15px; }
+#online-bar { font-size: 14px; }
+.online-mini-btn { font-size: 14px; }
+.offline-chip, .me-chip, .ai-chip { font-size: 12px; }
+.lobby-badge { font-size: 12px; }
+.lobby-share .online-input { font-size: 14px; }
+
+.phase-step { font-size: 14px; }
+.phase-step-num { font-size: 13px; }
+.phase-step-arrow { font-size: 11px; }
+.phase-instruction { font-size: 15px; }
+.phase-cancel-btn { font-size: 14px; }
+
+#right-panel h3 { font-size: 15px; letter-spacing: 2px; }
+.player-panel { font-size: 14px; }
+.player-panel-name { font-size: 16px; }
+.player-panel-vp { font-size: 17px; }
+.player-panel-stats { font-size: 14px; }
+.market-label { font-size: 15px; }
+.market-current-price { font-size: 14px; }
+.market-space { font-size: 10px; }
+.market-space .price-label { font-size: 10px; }
+
+#game-log { font-size: 14px; line-height: 1.5; }
+.log-entry.log-system { font-size: 14px; }
+.log-entry.log-era { font-size: 15px; }
+
+.hand-label, .action-label, .mat-label {
+    font-size: 14px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+}
+
+.action-btn,
+.action-btn.action-btn { font-size: 15px !important; letter-spacing: 0.5px !important; }
+.action-icon { width: 20px; height: 20px; }
+
+.card { font-size: 13px; }
+.card-type { font-size: 12px; }
+.card-name { font-size: 14px; }
+
+.mat-industry-label { font-size: 14px; letter-spacing: 0; line-height: 1.2; }
+.mat-tile { font-size: 12px; }
+
+#modal-title { font-size: 21px; }
+#modal-body, #modal-body p { font-size: 15px !important; }
+.modal-btn { font-size: 15px; }
+.choice-item-name { font-size: 16px; }
+.choice-item-detail { font-size: 14px; }
+.choice-item-cost { font-size: 14px; }
+.sell-beer-row, .sell-beer-row select, .sell-status { font-size: 14px; }
+.toast { font-size: 15px; }
+.scoring-table th { font-size: 14px; }
+.scoring-table th, .scoring-table td { font-size: 16px; }
+.scoring-table .total-row { font-size: 18px; }
+.tooltip { font-size: 14px; }
+.tooltip-stat { font-size: 13px; }
+
+/* ---- Desktop layout: room for the larger type ---- */
+@media (min-width: 1101px) {
+    #right-panel { width: 276px; }
+    #bottom-panel { height: 186px; }
+    #game-board { max-height: calc(100vh - 311px); }
+    #player-mat-container { width: 372px; padding: 8px 10px; }
+    #player-mat { gap: 5px 8px; }
+    .mat-tiles { gap: 2px; }
+    .mat-tile { width: 16px; height: 16px; flex: 0 0 16px; }
+    #action-buttons { gap: 6px; }
+}
+
+/* ---- Hand cards: nothing drawn over the printed art ---- */
+/* The type strip (::before) and the corner ribbon (::after) were absolute
+   layers above the <img>, so they painted straight across the card face. */
+.card.card-art::before,
+.card.card-art::after { display: none !important; content: none !important; }
+
+/* The art box is an exact 500x702 rectangle with no border eating into it,
+   so `contain` fills it edge to edge instead of leaving frame strips. */
+.card.card-art {
+    border: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 3px 6px rgba(0,0,0,0.5);
+    background: transparent;
+}
+.card.card-art img { border-radius: 4px; }
+.card.card-art.valid-discard { box-shadow: 0 0 0 2px var(--accent-gold), 0 0 10px rgba(201,168,76,0.75); }
+.card.card-art.selected { box-shadow: 0 0 0 2px var(--accent-gold), 0 0 14px rgba(201,168,76,0.9); }
+
+/* Industry name sits on the card's bottom rail, not over the picture. */
+.card.card-art .card-art-label {
+    left: 8%;
+    right: 8%;
+    bottom: 3.5%;
+    padding: 2px 2px 3px;
+    font-size: 12px;
+    line-height: 1.15;
+    border-color: rgba(201,168,76,0.7);
+    background: rgba(20,17,12,0.88);
+}
+
+/* A raised (hovered / selected) card used to be cut off by the hand row,
+   which clipped everything above its own box. */
+@media (min-width: 1101px) {
+    #player-hand { overflow: visible; padding-top: 12px; margin-top: -10px; }
+    .card.card-art { height: min(140px, calc((100cqi - 42px) / 8 * 1.404)); }
+}
+.card.card-art:hover { z-index: 5; }
+.card.card-art.selected { z-index: 6; }
+
+/* Mat chips: the chip fills its box, ring drawn outside the art. */
+.mat-tile.mat-tile-art { border: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.65); }
+.mat-tile.mat-tile-art.available { box-shadow: 0 0 0 1px rgba(201,168,76,0.55); }
+
+/* ---- Large preview (hover, or long-press on touch) ---- */
+#card-preview {
+    position: fixed;
+    z-index: 5000;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    display: none;
+    padding: 6px;
+    background: rgba(18,14,9,0.96);
+    border: 1px solid rgba(201,168,76,0.7);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+    color: #f1e4c4;
+    font-size: 14px;
+    line-height: 1.5;
+}
+#card-preview.show { display: block; }
+#card-preview img { display: block; border-radius: 6px; }
+#card-preview .pv-caption {
+    margin-top: 6px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #f4e1a8;
+}
+#card-preview .pv-info { margin-top: 4px; white-space: pre-line; font-size: 14px; color: #e3d6b6; }
+#card-preview.pv-chip img { width: 168px; height: 168px; margin: 0 auto; }
+#card-preview.pv-chip { width: 248px; }
+
+/* ---- Styled tooltip replacing the browser's tiny native one ---- */
+#ui-tip {
+    position: fixed;
+    z-index: 5001;
+    left: 0;
+    top: 0;
+    max-width: 340px;
+    padding: 7px 10px;
+    display: none;
+    pointer-events: none;
+    background: rgba(18,14,9,0.97);
+    border: 1px solid rgba(201,168,76,0.6);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+    color: #f1e4c4;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+}
+#ui-tip.show { display: block; }
+
+/* Long-press on touch should not select text or pop the system menu. */
+#player-hand .card, .mat-tile, #mat-label { -webkit-touch-callout: none; user-select: none; }
+
+/* The mat heading opens the full printed player mat. */
+#mat-label { cursor: zoom-in; }
+#mat-label::after { content: '　⊕ 玩家板'; font-size: 13px; letter-spacing: 0; color: var(--text-muted); }
+#player-hand .card.card-art, .mat-tile.mat-tile-art { cursor: zoom-in; }
+
+/* Long industry names (two-industry cards) stay on one line. */
+.card.card-art .card-art-label { white-space: nowrap; overflow: hidden; }
+.card.card-art .card-art-label.long { font-size: 11px; letter-spacing: -0.3px; left: 4%; right: 4%; }

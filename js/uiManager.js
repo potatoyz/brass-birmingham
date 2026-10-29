@@ -277,7 +277,7 @@ class UIManager {
             panel.innerHTML = `
                 <div class="player-panel-header">
                     <span class="player-panel-name" style="color: ${player.color}">${player.name}${player.isAI ? ' <span class="ai-chip">AI</span>' : ''}</span>
-                    <span class="player-panel-vp">${player.vp} <span style="font-size:10px;font-weight:400;color:var(--text-muted)">分</span></span>
+                    <span class="player-panel-vp">${player.vp} <span class="vp-unit" style="font-size:13px;font-weight:400;color:var(--text-muted)">分</span></span>
                 </div>
                 <div class="player-panel-stats">
                     <span class="player-panel-stat" title="资金" style="color:#c9a84c">£${player.money}</span>
@@ -323,9 +323,14 @@ class UIManager {
                 if (card.type === CARD_TYPES.LOCATION) cardEl.classList.add('location-card');
                 else if (card.type === CARD_TYPES.INDUSTRY) cardEl.classList.add('industry-card');
                 else cardEl.classList.add('wild-card');
+                // A two-industry card names both briefly so the label stays on
+                // the card's bottom rail instead of spilling over the picture.
+                const labelText = (card.type === CARD_TYPES.INDUSTRY && card.industryTypes.length > 1)
+                    ? card.industryTypes.map(t => (INDUSTRY_DISPLAY[t] && INDUSTRY_DISPLAY[t].shortName) || t).join('/')
+                    : cardDisplayName(card);
                 const artLabel = card.type === CARD_TYPES.LOCATION
                     ? ''
-                    : `<span class="card-art-label">${cardDisplayName(card)}</span>`;
+                    : `<span class="card-art-label${labelText.length > 3 ? ' long' : ''}" data-full="${cardDisplayName(card)}">${labelText}</span>`;
                 cardEl.innerHTML = `<img src="${art}" alt="${card.type === CARD_TYPES.LOCATION ? cardDisplayName(card) : ''}" draggable="false">${artLabel}`;
                 if (this.selectedCard === idx) cardEl.classList.add('selected');
                 if (this.selectedAction === ACTIONS.SCOUT &&

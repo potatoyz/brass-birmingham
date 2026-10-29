@@ -185,6 +185,7 @@ class BoardRenderer {
             if (!url && !layout) return;
             this.assetURL = url;
             this.layout = layout;
+            this._linkObstacles = null;
             // Printed industry spaces are larger than the slots we draw on our
             // own board, so match them when sitting on real artwork.
             if (url) {
@@ -1279,11 +1280,73 @@ class BoardRenderer {
     // Built Links
     // ========================================================================
 
+    // Rectangles a built link tile must stay off: printed town/merchant name
+    // banners and every industry space. Only known for the bundled board.
+    linkObstacles() {
+        if (this._linkObstacles) return this._linkObstacles;
+        const out = [];
+        const bundled = typeof BoardAssets !== 'undefined' && BoardAssets.bannerRects
+            && typeof this.assetURL === 'string' && /(^|\/)assets\/board\./.test(this.assetURL);
+        if (bundled) {
+            for (const r of Object.values(BoardAssets.bannerRects())) {
+                out.push({ x0: r[0] * this.W, y0: r[1] * this.H, x1: r[2] * this.W, y1: r[3] * this.H });
+            }
+            const S = this.citySlotSize, SH = this.citySlotH;
+            const ids = Object.keys(CITIES).concat(typeof MERCHANTS !== 'undefined' ? Object.keys(MERCHANTS) : []);
+            for (const cityId of ids) {
+                const ps = BoardAssets.slotPositions(cityId, this.layout) || [];
+                for (const [nx, ny] of ps) {
+                    const cx = nx * this.W, cy = ny * this.H;
+                    out.push({ x0: cx - S / 2, y0: cy - SH / 2, x1: cx + S / 2, y1: cy + SH / 2 });
+                }
+            }
+        }
+        this._linkObstacles = out;
+        return out;
+    }
+
+    // Where along a→b (0..1) to lay a link tile: the midpoint unless that
+    // covers a name banner, a space or another link, then the nearest clear spot.
+    linkTileT(a, b, w, h, placed) {
+        const obstacles = this.linkObstacles();
+        if (!obstacles.length) return 0.5;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const r = h / 2;
+        const distToRect = (px, py, q) => {
+            const ex = Math.max(q.x0 - px, 0, px - q.x1);
+            const ey = Math.max(q.y0 - py, 0, py - q.y1);
+            return Math.hypot(ex, ey);
+        };
+        const cost = (t) => {
+            const cx = a.x + dx * t, cy = a.y + dy * t;
+            let c = 0;
+            for (let k = -2; k <= 2; k++) {
+                const px = cx + ux * (w / 2 - r) * (k / 2), py = cy + uy * (w / 2 - r) * (k / 2);
+                for (const q of obstacles) if (distToRect(px, py, q) < r) c += 1;
+                for (const q of placed) if (distToRect(px, py, q) < r * 0.5) c += 1;
+            }
+            return c;
+        };
+        let best = 0.5, bestCost = cost(0.5);
+        if (bestCost === 0) return 0.5;
+        for (let d = 0.04; d <= 0.3001; d += 0.04) {
+            for (const t of [0.5 - d, 0.5 + d]) {
+                const c = cost(t);
+                if (c < bestCost) { best = t; bestCost = c; }
+                if (c === 0) return t;
+            }
+        }
+        return best;
+    }
+
     drawBuiltLinks() {
         const linkGroup = this.createGroup({ id: 'built-links-layer' });
 
         if (!this.state) return;
 
+        const placedLinks = [];
         for (const [connId, link] of Object.entries(this.state.boardLinks)) {
             const conn = CONNECTIONS.find(c => c.id === connId);
             if (!conn) continue;
@@ -1310,10 +1373,12 @@ class BoardRenderer {
                     mids.push([pos1, pos2]);
                 }
                 for (const [a, b] of mids) {
-                    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
                     const angle = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
                     // 297x126 art; keep that ratio at roughly a city-slot's width.
                     const w = this.citySlotSize * 1.05, h = w * (126 / 297);
+                    const t = this.linkTileT(a, b, w, h, placedLinks);
+                    const mx = a.x + (b.x - a.x) * t, my = a.y + (b.y - a.y) * t;
+                    placedLinks.push({ x0: mx - w / 2, y0: my - w / 2, x1: mx + w / 2, y1: my + w / 2 });
                     const g = this.createGroup({
                         transform: `rotate(${angle.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})`,
                         filter: 'url(#tileShadow)',

@@ -20,8 +20,12 @@ const BoardAssets = (() => {
     const STORAGE_URL = 'brassBoardAsset';
     const STORAGE_LAYOUT = 'brassBoardLayout';
 
+    // Bumped whenever the shipped art changes: images are served with a
+    // week-long max-age, so a new query string is what makes browsers refetch.
+    const AV = '?v=zh2';
+
     const CANDIDATES = [
-        'assets/board.jpg',
+        'assets/board.jpg' + AV,
         'assets/board.jpeg',
         'assets/board.png',
         'assets/board.webp',
@@ -82,11 +86,11 @@ const BoardAssets = (() => {
     function tileUrl(industryType, level, flipped) {
         const stem = TILE_STEM[industryType];
         if (!stem) return null;
-        return `assets/tiles/${stem}-${level}${flipped ? '-flipped' : ''}.jpg`;
+        return `assets/tiles/${stem}-${level}${flipped ? '-flipped' : ''}.jpg${AV}`;
     }
 
     function linkUrl(type) {
-        return `assets/tiles/${type === 'canal' ? 'canal' : 'rail'}.jpg`;
+        return `assets/tiles/${type === 'canal' ? 'canal' : 'rail'}.jpg${AV}`;
     }
 
     // Card faces live under assets/cards/, keyed by our own ids: a location
@@ -96,21 +100,21 @@ const BoardAssets = (() => {
 
     function cardsReady() { return cardsAvailable; }
     function matReady() { return matAvailable; }
-    function matUrl() { return 'assets/player-mat.jpg'; }
+    function matUrl() { return 'assets/player-mat.jpg' + AV; }
 
     function cardUrl(card) {
         if (!cardsAvailable || !card) return null;
         switch (card.type) {
-            case CARD_TYPES.LOCATION:      return `assets/cards/${card.location}.jpg`;
+            case CARD_TYPES.LOCATION:      return `assets/cards/${card.location}.jpg${AV}`;
             // Dual cards have no printed equivalent; use the first industry.
-            case CARD_TYPES.INDUSTRY:      return `assets/cards/${card.industryTypes[0]}.jpg`;
-            case CARD_TYPES.WILD_LOCATION: return 'assets/cards/wild-location.jpg';
-            case CARD_TYPES.WILD_INDUSTRY: return 'assets/cards/wild-industry.jpg';
+            case CARD_TYPES.INDUSTRY:      return `assets/cards/${card.industryTypes[0]}.jpg${AV}`;
+            case CARD_TYPES.WILD_LOCATION: return 'assets/cards/wild-location.jpg' + AV;
+            case CARD_TYPES.WILD_INDUSTRY: return 'assets/cards/wild-industry.jpg' + AV;
             default: return null;
         }
     }
 
-    function cardBackUrl() { return 'assets/cards/back.jpg'; }
+    function cardBackUrl() { return 'assets/cards/back.jpg' + AV; }
 
     async function probeCards() {
         cardsAvailable = !!(await tryLoad('assets/cards/birmingham.jpg'));
@@ -181,6 +185,12 @@ const BoardAssets = (() => {
         return out;
     }
 
+    // Printed name banners on the bundled board (0..1 of width/height, the
+    // merchant ones including the coal cart beneath). Built link tiles are
+    // nudged along their route so they never sit on top of a town's name.
+    const BANNERS = {"warrington":[0.2168,0.0586,0.3384,0.0835],"leek":[0.5273,0.0981,0.5811,0.1152],"belper":[0.7197,0.1118,0.7842,0.1289],"nottingham":[0.8423,0.1221,0.9648,0.1465],"stokeOnTrent":[0.3633,0.1699,0.4595,0.187],"uttoxeter":[0.5234,0.2588,0.6069,0.2759],"stone":[0.2754,0.2764,0.3354,0.2935],"derby":[0.7285,0.2842,0.7944,0.3013],"stafford":[0.3667,0.3701,0.437,0.3877],"burtonOnTrent":[0.6279,0.3979,0.7393,0.415],"cannock":[0.4419,0.4717,0.5107,0.4893],"shrewsbury":[0.0298,0.5142,0.1494,0.5391],"tamworth":[0.6616,0.5244,0.7393,0.542],"wolverhampton":[0.3184,0.5649,0.4219,0.582],"walsall":[0.4956,0.5884,0.5645,0.6055],"coalbrookdale":[0.1836,0.6084,0.2803,0.6255],"nuneaton":[0.7534,0.6265,0.8267,0.6436],"dudley":[0.3862,0.6875,0.4487,0.7046],"birmingham":[0.5879,0.7246,0.6777,0.7417],"coventry":[0.7783,0.7573,0.8477,0.7744],"kidderminster":[0.2998,0.791,0.3955,0.8086],"oxford":[0.6924,0.834,0.7812,0.8584],"redditch":[0.5527,0.8438,0.6172,0.8608],"gloucester":[0.4512,0.9106,0.5703,0.9351],"worcester":[0.3228,0.9204,0.3979,0.9375]};
+    function bannerRects() { return BANNERS; }
+
     function savedUrl() {
         try { return localStorage.getItem(STORAGE_URL) || null; } catch (e) { return null; }
     }
@@ -237,7 +247,7 @@ const BoardAssets = (() => {
     return {
         resolve, layoutFor, saveLayout, clearLayout, savedLayout,
         OFFICIAL_LAYOUT, STORAGE_URL, SLOT_ROWS, slotPositions,
-        probeTiles, tilesReady, tileUrl, linkUrl,
+        probeTiles, tilesReady, tileUrl, linkUrl, bannerRects,
         probeCards, cardsReady, cardUrl, cardBackUrl, matReady, matUrl,
     };
 })();
