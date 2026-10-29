@@ -2,8 +2,6 @@
 
 **Brass: Birmingham 3D Online** —— 用 three.js 重写的《工业革命：伯明翰》网页联机版（非官方粉丝作品）
 
-- 🎮 **试玩（3D 版）**：<http://<服务器地址>:28789>
-- 🗺️ **经典 2D 版**：<http://<服务器地址>:28788>
 - 🌿 **代码分支**：3D 版的全部代码在 [`three` 分支](https://github.com/potatoyz/brass-birmingham/tree/three)；`main` 分支是联机 + 中文化后的经典 2D 版。
 
 本项目 fork 自 [npow/brass-birmingham](https://github.com/npow/brass-birmingham)（单机同屏的 2D 网页版）。在保留它的规则引擎的前提下，加了服务端联机房间，做了全量简体中文化，并重写了一套 3D 前端。3D 前端专门针对“看清版图、点得准、知道为什么不能点”这几个实际痛点设计。
