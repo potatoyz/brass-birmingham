@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link rel="icon" href="data:,">
 <title>工业革命：伯明翰 3D（联机版）</title>
-<link rel="stylesheet" href="css/three.css?v=3">
+<link rel="stylesheet" href="css/three.css?v=4">
 </head>
 <body>
 <!-- 首页 -->
@@ -47,30 +47,40 @@
 <!-- 对局 -->
 <section id="game" class="screen">
   <div id="stage"></div>
-  <header id="topbar">
-    <span id="era" class="era"></span><span id="round"></span>
-    <span id="turn"></span>
-    <span id="legend" class="legend"></span>
-    <span class="grow"></span>
-    <span id="deck" class="muted"></span>
-    <span class="muted">房间 <b id="room-code"></b></span><i id="net-dot" class="dot"></i>
-    <button id="btn-reclaim" hidden>收回控制</button>
-    <button id="btn-panels" class="m-only">信息</button>
-    <button id="btn-seats">玩家</button>
-    <button id="btn-log">日志</button>
-    <button id="btn-exit">退出</button>
-  </header>
-  <aside id="side-left" class="side">
-    <div id="players"></div>
-    <div id="markets"></div>
-  </aside>
+  <!-- 自己：常驻、醒目 -->
+  <div id="hud" class="hud">
+    <div class="hud-top"><span id="hud-badge"></span><span id="hud-money" class="money" title="你的资金"><i data-ic="coin"></i><b>0</b></span></div>
+    <div class="hud-stats">
+      <span class="st" id="hud-income" title="收入（每轮结束时领取）"><i data-ic="income"></i><b></b></span>
+      <span class="st" id="hud-vp" title="胜利点"><i data-ic="vp"></i><b></b></span>
+      <span class="st" id="hud-acts" title="本回合剩余动作"></span>
+    </div>
+    <div class="hud-era"><span id="era" class="era"></span><span id="round"></span></div>
+  </div>
+  <!-- 对手：紧凑头像条 -->
+  <div id="opps" class="opps"></div>
+  <!-- 工具栏 -->
+  <div id="toolbar" class="toolbar">
+    <span class="room" title="房间号"><b id="room-code"></b><i id="net-dot" class="dot"></i></span>
+    <button id="btn-reclaim" class="txt" hidden>收回控制</button>
+    <button id="btn-panels" class="m-only ib" title="产业板"><i data-ic="factory"></i></button>
+    <button id="btn-board" class="ib d-only" title="完整产业板"><i data-ic="factory"></i></button>
+    <button id="btn-market" class="ib" title="市场与牌堆"><i data-ic="market"></i></button>
+    <button id="btn-log" class="ib" title="日志"><i data-ic="log"></i></button>
+    <button id="btn-seats" class="ib" title="玩家与座位"><i data-ic="users"></i></button>
+    <button id="btn-settings" class="ib" title="动画与声音"><i data-ic="settings"></i></button>
+    <button id="btn-exit" class="ib" title="退出"><i data-ic="exit"></i></button>
+  </div>
+  <!-- 右侧：只有"下一块"的图标摘要 -->
   <aside id="side-right" class="side">
-    <div class="side-h">我的产业板 <button id="btn-board" class="mini" title="查看完整产业板（也可点左侧玩家卡片看对手的）">完整板 ▸</button></div>
+    <div class="side-h">下一块 <button id="btn-board2" class="mini" title="查看完整产业板">全部 ▸</button></div>
     <div id="mat"></div>
-    <div id="log" class="log"></div>
+    <div id="mk-mini" class="mk-mini" title="点击查看市场"></div>
   </aside>
+  <div id="ticker" class="ticker" title="点击查看完整日志"></div>
+  <div id="log" class="log"></div>
   <div id="view-ctl">
-    <button id="btn-zoom-in" title="放大">＋</button><button id="btn-zoom-out" title="缩小">－</button><button id="btn-view" title="复位视角">⟲</button>
+    <button id="btn-zoom-in" class="ib" title="放大"><i data-ic="plus"></i></button><button id="btn-zoom-out" class="ib" title="缩小"><i data-ic="minus"></i></button><button id="btn-view" class="ib" title="复位视角"><i data-ic="reset"></i></button>
   </div>
   <div id="dock">
     <div id="panel" class="panel"></div>
@@ -89,6 +99,6 @@
 <script src="js/gameLogic.js?v=6"></script>
 <script src="js/aiPlayer.js?v=4"></script>
 <script src="js/boardAssets.js?v=4"></script>
-<script src="js/three/bb3d.min.js?v=3"></script>
+<script src="js/three/bb3d.min.js?v=4"></script>
 </body>
 </html>

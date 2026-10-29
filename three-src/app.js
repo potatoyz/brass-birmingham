@@ -2,6 +2,8 @@
 // 规则全部来自 js/gameLogic.js（与服务端同一份引擎），这里只做呈现与选择。
 import { Board3D, PLAYER_CSS, ownerInitial, tilePath } from './board3d.js';
 import { Net } from './net.js';
+import { Fx, diffStates } from './fx.js';
+import { ICON } from './icons.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -18,6 +20,8 @@ const ACT = [
     ['loan', '贷款'], ['scout', '侦察'], ['pass', '跳过'],
 ];
 const ACT_NAME = Object.fromEntries(ACT);
+const ic = n => ICON[n] || '';
+const ROMAN_ = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ'];
 
 function cardImg(card) {
     if (!card) return null;
@@ -61,6 +65,9 @@ class App {
         this.msg = null; this.state = null; this.logic = null; this.me = -1;
         this.ix = this.freshIx();
         this.seenEvents = JSON.parse(localStorage.getItem('bb3d_seen') || '{}');
+        this.queue = []; this.playing = false; this.hold = {};
+        this.fx = new Fx(this);
+        document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = ic(el.dataset.ic); });
         this.bindStatic();
         this.autoJoin();
     }
@@ -104,6 +111,11 @@ class App {
         $('#btn-zoom-in').onclick = () => this.board && this.board.zoom(0.8);
         $('#btn-zoom-out').onclick = () => this.board && this.board.zoom(1.25);
         $('#btn-log').onclick = () => document.body.classList.toggle('show-log');
+        $('#ticker').onclick = () => document.body.classList.toggle('show-log');
+        $('#btn-market').onclick = () => this.marketModal();
+        $('#mk-mini').onclick = () => this.marketModal();
+        $('#btn-settings').onclick = () => this.settingsModal();
+        $('#btn-board2').onclick = () => this.openBoardModal();
         $('#btn-seats').onclick = () => this.seatsModal();
         $('#btn-exit').onclick = () => {
             if (!confirm('退出到首页？座位会保留，用同一浏览器打开房间链接即可回来。')) return;
@@ -152,17 +164,61 @@ class App {
             this.busy = false; this.refresh && this.state && this.refresh();
             return;
         }
-        if (m.t === 'result') { this.busy = false; toast(m.message, m.ok ? 'success' : 'error'); if (!m.ok) this.refresh(); return; }
+        if (m.t === 'result') {
+            toast(m.message, m.ok ? 'success' : 'error');
+            // on success stay busy until the new state is applied (it may be queued behind an animation)
+            if (!m.ok) { this.busy = false; this.refresh(); }
+            else { clearTimeout(this.busyT); this.busyT = setTimeout(() => { if (this.busy) { this.busy = false; this.refresh(); } }, 6000); }
+            return;
+        }
         if (m.t === 'left') {
             this.net.code = null; this.net.lastRoom = null; this.msg = null;
             history.replaceState(null, '', location.pathname); this.show('home'); return;
         }
         if (m.t !== 'room') return;
-        this.msg = m; this.me = m.you.seat; this.isHost = m.you.isHost;
         this.net.code = m.room.code; this.net.lastRoom = m.room.code;
         if (!new URLSearchParams(location.search).get('room')) history.replaceState(null, '', `?room=${m.room.code}`);
-        if (m.room.status === 'lobby' || !m.game) { this.renderLobby(m); this.show('lobby'); }
-        else this.renderGame(m);
+        if (m.room.status === 'lobby' || !m.game) { this.queue = []; this.shown = null; this.msg = m; this.me = m.you.seat; this.isHost = m.you.isHost; this.renderLobby(m); this.show('lobby'); return; }
+        // game updates are queued so each action's animation plays in server order
+        this.queue.push(m);
+        this.pump();
+    }
+
+    applyRoom(m) {
+        this.msg = m; this.me = m.you.seat; this.isHost = m.you.isHost;
+        this.net.code = m.room.code; this.net.lastRoom = m.room.code;
+        if (m.room.status === 'lobby' || !m.game) { this.renderLobby(m); this.show('lobby'); } else this.renderGame(m);
+    }
+    async pump() {
+        if (this.playing) return;
+        while (this.queue.length) {
+            const m = this.queue.shift();
+            const prev = this.shown;
+            const plan = prev && prev.code === m.room.code && prev.version !== m.version && m.game ? diffStates(prev.game, m.game) : null;
+            this.hold = {};
+            if (plan && this.fx.speed) for (const x of plan.money) this.hold[x.pid] = x.from;
+            this.shown = { code: m.room.code, version: m.version, game: m.game };
+            this.applyRoom(m);
+            if (!plan || plan.empty) { this.hold = {}; continue; }
+            this.playing = true;
+            try { await this.fx.play(plan, this.queue.length > 2 ? 3 : this.queue.length ? 1.6 : 1); } catch (e) { console.warn('fx', e); }
+            this.playing = false;
+            if (Object.keys(this.hold).length) { this.hold = {}; this.renderHud(); this.renderPlayers(); }
+        }
+    }
+    // a short banner when the turn passes
+    turnNotice(pid) {
+        if (!this.state || this.state.currentPlayerId !== pid) return;
+        const p = this.state.players[pid]; if (!p) return;
+        const mine = pid === this.me;
+        const el = document.createElement('div');
+        el.className = 'fx-turn' + (mine ? ' mine' : '');
+        el.style.setProperty('--pc', PLAYER_CSS[pid]);
+        el.innerHTML = mine ? '轮到你了' : `${ownerBadge(p, pid)}${esc(p.name)} 行动中`;
+        this.fx.layer.querySelectorAll('.fx-turn').forEach(x => x.remove());
+        this.fx.layer.appendChild(el);
+        setTimeout(() => el.remove(), mine ? 1500 : 1100);
+        if (mine) this.fx.sfx.play('turn');
     }
 
     // ---------------------------------------------------------------- lobby
@@ -240,13 +296,13 @@ class App {
 
     layoutInsets() {
         if (!this.board) return;
-        const top = $('#topbar').getBoundingClientRect().bottom;
-        const dock = $('#dock').getBoundingClientRect();
         const wide = window.innerWidth >= 900;
-        const left = wide ? $('#side-left').getBoundingClientRect().right : 0;
-        const right = wide ? window.innerWidth - $('#side-right').getBoundingClientRect().left : 0;
+        const top = wide ? $('#opps').getBoundingClientRect().bottom : Math.max($('#hud').getBoundingClientRect().bottom, $('#toolbar').getBoundingClientRect().bottom);
+        const dock = $('#dock').getBoundingClientRect();
         document.body.style.setProperty('--dockh', Math.round(window.innerHeight - dock.top) + 'px');
-        this.board.insets = { top: top + 4, bottom: window.innerHeight - dock.top + 4, left: Math.max(0, left), right: Math.max(0, right) };
+        const bottomEdge = wide ? dock.top : Math.min(dock.top, $('#opps').getBoundingClientRect().top || dock.top);
+        const right = wide ? window.innerWidth - $('#side-right').getBoundingClientRect().left : 0;
+        this.board.insets = { top: top + 4, bottom: window.innerHeight - bottomEdge + 4, left: 0, right: Math.max(0, right) };
     }
 
     get my() { return this.me >= 0 && this.state ? this.state.players[this.me] : null; }
@@ -254,7 +310,7 @@ class App {
     myTurn() {
         const m = this.msg, s = this.state;
         return !!(m && s && m.room.status === 'playing' && this.me >= 0 && s.currentPlayerId === this.me &&
-            !s.players[this.me].isAI && !m.pendingBonus && this.net.connected && !this.busy);
+            !s.players[this.me].isAI && !m.pendingBonus && this.net.connected && !this.busy && !this.queue.length);
     }
 
     // All the derived "what can I do" data for the current situation.
@@ -264,7 +320,7 @@ class App {
 
     refresh() {
         if (!this.state) return;
-        this.renderTop(); this.renderPlayers(); this.renderMarkets(); this.renderMat();
+        this.renderTop(); this.renderHud(); this.renderPlayers(); this.renderMarkets(); this.renderMat();
         this.renderHand(); this.renderActions(); this.renderPanel(); this.renderLog();
         if (this.modalKind === 'board' && !$('#modal').hidden) this.openBoardModal(this.boardPid);
         this.updateHighlights();
@@ -272,77 +328,125 @@ class App {
     }
 
     renderTop() {
-        const s = this.state, cur = s.players[s.currentPlayerId];
-        const left = s.actionsPerTurn - s.actionsThisTurn;
-        $('#era').textContent = s.era === 'canal' ? '运河时代' : '铁路时代';
+        const s = this.state;
+        $('#era').textContent = s.era === 'canal' ? '运河' : '铁路';
         $('#era').className = 'era ' + s.era;
+        $('#era').innerHTML = `${ic(s.era === 'canal' ? 'canal' : 'rail')}${s.era === 'canal' ? '运河时代' : '铁路时代'}`;
         $('#round').textContent = `第 ${s.round} 轮`;
-        const st = this.msg.room.status === 'ended' ? '游戏结束' :
-            this.msg.pendingBonus && this.msg.pendingBonus.waiting != null ? `等待 ${s.players[this.msg.pendingBonus.waiting].name} 选择奖励` :
-            `${s.currentPlayerId === this.me ? '轮到你' : '当前：' + cur.name} · 剩 ${left} 个动作`;
-        $('#turn').innerHTML = `<i class="sw" style="background:${cur.color}"></i>${esc(st)}`;
-        $('#deck').textContent = `牌堆 ${s.drawDeck.length}`;
         $('#room-code').textContent = this.msg.room.code;
         const mine = this.my;
         $('#btn-reclaim').hidden = !(mine && mine.isAI && this.msg.room.status === 'playing');
     }
 
+    // My own status: big money, income, VP, actions left.
+    renderHud() {
+        const s = this.state, p = this.my, hud = $('#hud');
+        hud.classList.toggle('spec', !p);
+        const cur = s.currentPlayerId === this.me && this.msg.room.status === 'playing';
+        hud.classList.toggle('cur', !!cur);
+        if (!p) { $('#hud-badge').innerHTML = '<span class="muted">观战中</span>'; $('#hud-money b').textContent = '—'; $('#hud-income b').textContent = '—'; $('#hud-vp b').textContent = '—'; $('#hud-acts').innerHTML = ''; return; }
+        hud.style.setProperty('--pc', PLAYER_CSS[this.me]);
+        $('#hud-badge').innerHTML = `${ownerBadge(p, this.me)}<span class="hud-name">${esc(p.name)}</span>`;
+        const mb = $('#hud-money b');
+        if (!mb.classList.contains('bump')) mb.textContent = this.hold[this.me] ?? p.money;
+        const inc = incomeLevelFromSpace(p.incomeSpace);
+        $('#hud-income b').textContent = (inc > 0 ? '+' : '') + inc;
+        $('#hud-income').classList.toggle('neg', inc < 0);
+        $('#hud-vp b').textContent = p.vp;
+        const left = cur ? s.actionsPerTurn - s.actionsThisTurn : 0;
+        const total = s.actionsPerTurn || 2;
+        $('#hud-acts').innerHTML = cur ? `${ic('actions')}${Array.from({ length: total }, (_, i) => `<i class="pip${i < left ? ' on' : ''}"></i>`).join('')}` : '';
+        $('#hud-acts').title = cur ? `本回合还剩 ${left} 个动作` : '';
+        $('#hud-acts').hidden = !cur;
+    }
+
+    // Opponents as a compact strip in turn order; hover = focus, click = details.
     renderPlayers() {
-        const s = this.state, box = $('#players');
+        const s = this.state, box = $('#opps');
         const order = s.turnOrder && s.turnOrder.length ? s.turnOrder : s.players.map((_, i) => i);
-        box.innerHTML = order.map((pid, n) => {
+        box.innerHTML = order.filter(pid => pid !== this.me).map(pid => {
             const p = s.players[pid], seat = this.msg.room.seats[pid] || {};
-            const cur = pid === s.currentPlayerId;
-            const links = s.era === 'canal' ? `运河 ${p.linksRemaining.canal}` : `铁路 ${p.linksRemaining.rail}`;
-            const spent = (s.moneySpentThisRound || {})[pid] || 0;
-            const tags = [p.isAI ? '<span class="chip">AI</span>' : '', pid === this.me ? '<span class="chip me">你</span>' : '', seat.human && !seat.online ? '<span class="chip off">离线</span>' : ''].join('');
-            return `<div class="pcard${cur ? ' cur' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="悬停：只看 ${esc(p.name)} 的产业和连线；点击：看 TA 的产业板">
-              <div class="pname">${ownerBadge(p, pid)}${esc(p.name)} ${tags}<span class="muted small porder" title="本轮行动顺序">第${n + 1}位</span></div>
-              <div class="pstats"><span title="资金">£${p.money}</span><span title="收入等级">收入 ${incomeLevelFromSpace(p.incomeSpace)}</span><span title="胜利点">${p.vp} 分</span></div>
-              <div class="pstats sub"><span>手牌 ${p.hand.length}</span><span>${links}</span><span title="本轮花费（决定下轮顺序）">本轮花 £${spent}</span></div>
-            </div>`;
+            const cur = pid === s.currentPlayerId && this.msg.room.status === 'playing';
+            const off = seat.human && !seat.online;
+            return `<button class="opp${cur ? ' cur' : ''}${off ? ' off' : ''}${this.focusPid === pid ? ' focus' : ''}" data-pid="${pid}" style="--pc:${p.color}" title="${esc(p.name)}${p.isAI ? '（AI）' : ''}${off ? '（离线）' : ''}：悬停只看 TA 的资产，点击看详情">
+              ${ownerBadge(p, pid)}<span class="on">${esc(p.name)}</span><span class="om">£${this.hold[pid] ?? p.money}</span><span class="ov">${ic('vp')}${p.vp}</span>${cur ? '<i class="turnmark" title="正在行动"></i>' : ''}</button>`;
         }).join('');
-        box.querySelectorAll('.pcard').forEach(el => {
-            el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
-            el.onmouseleave = () => this.board && this.board.setFocus(null);
-            el.onclick = e => { if (!e.target.closest('button')) this.openBoardModal(+el.dataset.pid); };
-        });
-        // colour legend in the top bar (also a focus toggle on touch)
-        $('#legend').innerHTML = s.players.map((p, pid) => `<span class="lg${this.focusPid === pid ? ' on' : ''}" data-pid="${pid}" title="${esc(p.name)}：点按只看 TA 的版图资产">${ownerBadge(p, pid)}<span class="lg-n">${esc(p.name)}</span></span>`).join('');
-        $('#legend').querySelectorAll('.lg').forEach(el => {
+        box.querySelectorAll('.opp').forEach(el => {
             el.onmouseenter = () => this.board && this.board.setFocus(+el.dataset.pid);
             el.onmouseleave = () => this.board && this.board.setFocus(this.focusPid ?? null);
-            el.onclick = () => { const pid = +el.dataset.pid; this.focusPid = this.focusPid === pid ? null : pid; this.board && this.board.setFocus(this.focusPid ?? null); this.renderPlayers(); };
+            el.onclick = () => this.playerModal(+el.dataset.pid);
         });
     }
 
-    renderMarkets() {
-        const s = this.state;
-        const cubes = (n, max, cls) => Array.from({ length: max }, (_, i) => `<i class="cube ${cls}${i < n ? '' : ' empty'}"></i>`).join('');
-        $('#markets').innerHTML = `
-          <div class="mk"><div class="mk-h">煤市场 <b>£${s.getCoalPrice()}</b><span class="muted">/块 · 剩 ${s.coalMarket}</span></div><div class="cubes">${cubes(s.coalMarket, 14, 'coal')}</div></div>
-          <div class="mk"><div class="mk-h">铁市场 <b>£${s.getIronPrice()}</b><span class="muted">/块 · 剩 ${s.ironMarket}</span></div><div class="cubes">${cubes(s.ironMarket, 10, 'iron')}</div></div>
-          <div class="mk muted">万能地点 ${s.wildLocationPile} · 万能产业 ${s.wildIndustryPile}</div>`;
+    // Details of one player (secondary view).
+    playerModal(pid) {
+        const s = this.state, p = s.players[pid], seat = this.msg.room.seats[pid] || {};
+        const order = s.turnOrder && s.turnOrder.length ? s.turnOrder : s.players.map((_, i) => i);
+        const links = s.era === 'canal' ? `运河 ${p.linksRemaining.canal}` : `铁路 ${p.linksRemaining.rail}`;
+        const spent = (s.moneySpentThisRound || {})[pid] || 0;
+        const tags = [p.isAI ? 'AI' : '', pid === this.me ? '你' : '', seat.human && !seat.online ? '离线' : '', pid === s.currentPlayerId ? '正在行动' : ''].filter(Boolean).map(t => `<span class="chip">${t}</span>`).join('');
+        this.openModal(`${p.name}`, `<div class="pdet" style="--pc:${p.color}">
+            <div class="pdet-h">${ownerBadge(p, pid)}<b>${esc(p.name)}</b>${tags}</div>
+            <div class="pdet-g">
+              <div>${ic('coin')}<b>£${p.money}</b><small>资金</small></div>
+              <div>${ic('income')}<b>${incomeLevelFromSpace(p.incomeSpace)}</b><small>收入</small></div>
+              <div>${ic('vp')}<b>${p.vp}</b><small>胜利点</small></div>
+              <div>${ic('cards')}<b>${p.hand.length}</b><small>手牌</small></div>
+              <div>${ic(s.era === 'canal' ? 'canal' : 'rail')}<b>${links.split(' ')[1]}</b><small>剩余${links.split(' ')[0]}</small></div>
+              <div><b>第 ${order.indexOf(pid) + 1} 位</b><small>本轮顺序 · 已花 £${spent}</small></div>
+            </div></div>
+            <div class="btns"><button data-focus>${this.focusPid === pid ? '取消只看 TA' : '版图上只看 TA'}</button><button class="primary" data-pb>TA 的产业板</button></div>`);
+        $('#modal-body [data-pb]').onclick = () => this.openBoardModal(pid);
+        $('#modal-body [data-focus]').onclick = () => { this.focusPid = this.focusPid === pid ? null : pid; this.board && this.board.setFocus(this.focusPid ?? null); this.closeModal(); this.renderPlayers(); };
     }
 
+    // Tiny market line under the mat; details in a modal.
+    renderMarkets() {
+        const s = this.state;
+        $('#mk-mini').innerHTML = `<span>${ic('coal')}£${s.getCoalPrice()}</span><span>${ic('iron')}£${s.getIronPrice()}</span><span title="牌堆">${ic('cards')}${s.drawDeck.length}</span>`;
+        if (this.modalKind === 'market' && !$('#modal').hidden) this.marketModal();
+    }
+    marketModal() {
+        const s = this.state; if (!s) return;
+        const cubes = (n, max, cls) => Array.from({ length: max }, (_, i) => `<i class="cube ${cls}${i < max - n ? ' empty' : ''}"></i>`).join('');
+        this.openModal('市场与牌堆', `
+          <div class="mk"><div class="mk-h">${ic('coal')} 煤 <b>£${s.getCoalPrice()}</b><span class="muted">/块 · 剩 ${s.coalMarket}/14</span></div><div class="cubes">${cubes(s.coalMarket, 14, 'coal')}</div></div>
+          <div class="mk"><div class="mk-h">${ic('iron')} 铁 <b>£${s.getIronPrice()}</b><span class="muted">/块 · 剩 ${s.ironMarket}/10</span></div><div class="cubes">${cubes(s.ironMarket, 10, 'iron')}</div></div>
+          <div class="mk">${ic('cards')} 牌堆 <b>${s.drawDeck.length}</b> 张 · 万能地点 <b>${s.wildLocationPile}</b> · 万能产业 <b>${s.wildIndustryPile}</b></div>
+          <p class="muted small">市场价格随存量变化：越少越贵；市场空了仍可按 £8（煤）/£6（铁）购买。煤需要连到市场（商人）才能买，铁随处可买。</p>`);
+        this.modalKind = 'market';
+    }
+    settingsModal() {
+        const f = this.fx;
+        const row = (k, v, label) => `<button class="seg${f.mode === v ? ' on' : ''}" data-fx="${v}">${label}</button>`;
+        this.openModal('动画与声音', `
+          <div class="set-row"><span>${ic('speed')} 动作动画</span><span class="segs">${row('', 'normal', '正常')}${row('', 'fast', '快速')}${row('', 'off', '关闭')}</span></div>
+          <div class="set-row"><span>${ic(f.sfx.muted ? 'mute' : 'sound')} 音效</span><span class="segs"><button class="seg${f.sfx.muted ? '' : ' on'}" data-snd="1">开</button><button class="seg${f.sfx.muted ? ' on' : ''}" data-snd="0">关</button></span></div>
+          <p class="muted small">${f.reduced ? '系统开启了"减少动态效果"，默认用快速动画。' : '对手和 AI 的动作也会按顺序播放；连续多步时自动加速。'}</p>`);
+        $('#modal-body').querySelectorAll('[data-fx]').forEach(b => b.onclick = () => { f.setMode(b.dataset.fx); this.settingsModal(); });
+        $('#modal-body').querySelectorAll('[data-snd]').forEach(b => b.onclick = () => { f.sfx.muted = b.dataset.snd === '0'; if (!f.sfx.muted) f.sfx.play('coin'); this.settingsModal(); });
+    }
+
+    // Right side: one small icon per industry showing only the next tile.
     renderMat() {
         const box = $('#mat');
         const p = this.my;
         if (!p) { box.innerHTML = '<div class="muted">观战中</div>'; return; }
         box.style.setProperty('--pc', PLAYER_CSS[this.me] || 'transparent');
         const rem = this.state.getRemainingTiles(this.me);
-        const devTypes = this.ix.mode === 'develop' && this.myTurn() ? new Set(this.logic.getDevelopableTypes(this.me).map(t => t.type)) : new Set();
+        const devMode = this.ix.mode === 'develop' && this.myTurn();
+        document.body.classList.toggle('dev-mode', devMode);
+        const devTypes = devMode ? new Set(this.logic.getDevelopableTypes(this.me).map(t => t.type)) : new Set();
         box.innerHTML = ORDER.map(type => {
-            const r = rem[type], lv = this.levelStrip(this.me, type);
-            if (!r.count) return `<div class="mtile none" data-type="${type}"><div class="mimg empty"></div><div class="mtxt"><b>${indName(type)}</b><div class="muted">已用完</div></div></div>`;
+            const r = rem[type];
+            if (!r.count) return `<div class="mtile none" data-type="${type}" title="${indName(type)}：已用完"><div class="mimg empty">${indName(type).slice(0, 2)}</div><div class="mcost muted">用完</div></div>`;
             const td = r.tiles[0];
             const chosen = this.ix.dev.filter(x => x === type).length;
-            const cls = (devTypes.has(type) ? ' can' : '') + (chosen ? ' chosen' : '');
-            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level, false, this.me)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type))}">
-              <img class="mimg" src="${tileImg(type, td.level, false, this.me)}" alt="">${chosen ? `<b class="badge">${chosen > 1 ? '×2' : '✓'}</b>` : ''}
-              <div class="mtxt"><b>${indName(type)} ${ROMAN[td.level]}</b> <span class="muted">剩 ${r.count}</span>
-                <div>${costLine(td)}</div><div>${gainLine(td)}${td.canDevelop ? '' : ' · <span class="warn">不可发展</span>'}</div>
-                <div class="lvs">${lv}</div></div></div>`;
+            const cls = (devTypes.has(type) ? ' can' : '') + (chosen ? ' chosen' : '') + (td.canDevelop ? '' : ' nodev');
+            const cost = `<span>£${td.cost}</span>${td.costCoal ? `<span class="rq">${ic('coal')}${td.costCoal}</span>` : ''}${td.costIron ? `<span class="rq">${ic('iron')}${td.costIron}</span>` : ''}${td.beersToSell ? `<span class="rq">${ic('beer')}${td.beersToSell}</span>` : ''}`;
+            return `<div class="mtile${cls}" data-type="${type}" data-preview="tile" data-img="${tileImg(type, td.level, false, this.me)}" data-cap="${indName(type)} ${td.level} 级（剩 ${r.count} 块）" data-info="${esc(tileInfo(td, type) + '\n剩余：' + this.levelGroups(this.me, type).map(x => `${ROMAN[x.level]}×${x.left}`).join(' '))}">
+              <div class="mimgw"><img class="mimg" src="${tileImg(type, td.level, false, this.me)}" alt="${indName(type)}"><b class="mlv">${ROMAN[td.level]}</b><b class="mcnt">×${r.count}</b>${chosen ? `<b class="badge">${chosen > 1 ? '×2' : '✓'}</b>` : ''}</div>
+              <div class="mcost">${cost}</div></div>`;
         }).join('');
         box.querySelectorAll('.mtile.can').forEach(el => el.onclick = () => this.toggleDevelop(el.dataset.type));
     }
@@ -470,10 +574,11 @@ class App {
 
     renderLog() {
         const s = this.state;
-        $('#log').innerHTML = '<div class="log-h">日志</div>' + (this.msg.log || []).slice(0, 60).map(e => {
-            const p = e.playerId != null ? s.players[e.playerId] : null;
-            return `<div class="le ${e.type || ''}">${p ? `<i class="sw" style="background:${p.color}"></i><b>${esc(p.name)}</b> ` : ''}${esc(e.message)}</div>`;
-        }).join('');
+        const line = e => { const p = e.playerId != null ? s.players[e.playerId] : null; return `<div class="le ${e.type || ''}">${p ? `${ownerBadge(p, e.playerId)}` : ''}<span>${esc(e.message)}</span></div>`; };
+        const log = this.msg.log || [];
+        $('#log').innerHTML = `<div class="log-h">日志 <button class="mini" data-close>${ic('close')}</button></div>` + log.slice(0, 60).map(line).join('');
+        $('#log [data-close]').onclick = () => document.body.classList.remove('show-log');
+        $('#ticker').innerHTML = log.slice(0, 2).map(line).join('') + (log.length ? '' : '<div class="le muted">对局开始</div>');
     }
 
     // ---------------------------------------------------------------- interaction
@@ -618,28 +723,29 @@ class App {
             const reason = this.me < 0 ? '你在观战' : this.busy ? '已提交，等待服务器…' : !this.net.connected ? '连接中断，正在重连…'
                 : this.msg.pendingBonus && this.msg.pendingBonus.waiting != null ? `等待 ${s.players[this.msg.pendingBonus.waiting].name} 选择奖励…`
                 : s.players[this.me] && s.players[this.me].isAI && s.currentPlayerId === this.me ? '你的座位正由 AI 代打（可点顶部"收回控制"）' : `等待 ${cur.name} 行动…`;
-            el.innerHTML = `<div class="ptitle">${esc(reason)}</div><div class="muted small">可以拖动/缩放版图，悬停或长按查看大图。</div>`;
+            el.innerHTML = `<div class="ptitle one">${cur && !this.busy && this.me >= 0 && this.net.connected && !(this.msg.pendingBonus && this.msg.pendingBonus.waiting != null) ? ownerBadge(cur, s.currentPlayerId) : ''}${esc(reason)}</div>`;
             return;
         }
         el.hidden = false; el.className = 'panel';
         switch (ix.mode) {
             case 'idle':
                 title = ix.card == null ? '轮到你了' : `已选「${cardDisplayName(p.hand[ix.card])}」`;
-                hint = ix.card == null ? '① 选一张手牌，版图会高亮它能建的位置；② 或直接点版图上的金色位置；③ 也可点下方动作按钮。'
-                    : (this.targetsWithCard(ix.card).length ? '点版图上高亮的位置建造，或点下方动作按钮用这张牌做其他动作。' : '这张牌现在不能建造，可点下方动作按钮用它做其他动作。');
+                hint = ix.card == null ? '点版图金色位置建造，或选一张牌 / 一个动作。'
+                    : (this.targetsWithCard(ix.card).length ? '点高亮位置建造，或选下方动作。' : '这张牌不能建造，选下方其他动作。');
                 {
                     const main = ['build', 'network', 'sell', 'develop'];
                     const r = Object.fromEntries(ACT.map(([a]) => [a, this.whyNot(a)]));
                     if (main.every(a => r[a])) {
                         const left = ['loan', 'scout', 'pass'].filter(a => !r[a]).map(a => ACT_NAME[a]);
-                        hint = `<b class="warn">现在只能${left.join('、')}。</b>` + main.map(a => `<div class="why">${ACT_NAME[a]}：${esc(r[a])}</div>`).join('');
+                        hint = `<details class="whys"><summary><b class="warn">现在只能${left.join('、')}</b> <span class="muted">为什么？</span></summary>${main.map(a => `<div class="why">${ACT_NAME[a]}：${esc(r[a])}</div>`).join('')}</details>`;
                     }
                 }
-                el.innerHTML = `<div class="ptitle">${esc(title)}</div><div class="hint">${hint}</div>` + (ix.card != null ? '<div class="btns"><button data-b="cancel">取消选牌</button></div>' : '');
+                el.className = 'panel idle';
+                el.innerHTML = `<div class="pline"><span class="ptitle">${esc(title)}</span><span class="hint">${hint}</span>${ix.card != null ? '<button data-b="cancel" class="mini">取消选牌</button>' : ''}</div>`;
                 return this.bindPanel();
             case 'build': {
                 if (!ix.slot) {
-                    el.innerHTML = `<div class="ptitle">建造</div><div class="hint">点版图上高亮的位置${ix.card != null ? '（只显示这张牌能建的）' : ''}。</div><div class="btns"><button data-b="cancel">取消</button></div>`;
+                    el.innerHTML = `<div class="pline"><span class="ptitle">建造</span><span class="hint">点版图上高亮的位置。</span><button data-b="cancel" class="mini">取消</button></div>`;
                     return this.bindPanel();
                 }
                 const [cityId] = this.splitKey(ix.slot);
@@ -649,8 +755,8 @@ class App {
                 body = '<div class="opts">' + opts.map(t => {
                     const c = t.cost, on = t.industryType === ix.ind;
                     const parts = [`£${c.money}`];
-                    if (c.coal) parts.push(`煤 ${c.coal}${c.coalCost ? `（买 £${c.coalCost}）` : '（免费）'}`);
-                    if (c.iron) parts.push(`铁 ${c.iron}${c.ironCost ? `（买 £${c.ironCost}）` : '（免费）'}`);
+                    if (c.coal) parts.push(`${ic('coal')}${c.coal}${c.coalCost ? `(£${c.coalCost})` : ''}`);
+                    if (c.iron) parts.push(`${ic('iron')}${c.iron}${c.ironCost ? `(£${c.ironCost})` : ''}`);
                     return `<button class="opt${on ? ' on' : ''}" data-ind="${t.industryType}"><img src="${tileImg(t.industryType, t.tileData.level, false, this.me)}" alt=""><span><b>${indName(t.industryType)} ${t.tileData.level} 级</b><br>${parts.join(' + ')} = <b>£${c.total}</b></span></button>`;
                 }).join('') + '</div>';
                 const t = this.curBuildTarget();
@@ -667,7 +773,7 @@ class App {
                 title = era === 'canal' ? '建运河' : '建铁路';
                 const n = ix.links.length;
                 const name = id => { const c = CONNECTIONS.find(c => c.id === id); return c ? connName(c) : id; };
-                if (!n) body = '<div class="hint">点版图上高亮的连线（青色）。</div>';
+                if (!n) body = '<div class="hint">点版图上青色的连线。</div>';
                 else {
                     body = ix.links.map((id, k) => `<div class="row"><span>第 ${k + 1} 条</span><b>${esc(name(id))}</b></div>`).join('');
                     if (n === 1) {
@@ -684,7 +790,7 @@ class App {
             case 'sell': {
                 title = '销售';
                 const targets = this.logic.getValidSellTargets(this.me);
-                if (!ix.sell.length) body = '<div class="hint">点版图上抬起的己方产业（可多选，一次卖多个）。</div>';
+                if (!ix.sell.length) body = '<div class="hint">点版图上抬起的产业（可多选）。</div>';
                 else {
                     body = ix.sell.map(key => {
                         const t = targets.find(t => t.key === key); if (!t) return '';
@@ -708,7 +814,7 @@ class App {
             }
             case 'develop': {
                 title = '发展';
-                if (!ix.dev.length) body = '<div class="hint">在右侧"我的产业板"里点要移除的板块（亮起的可选，最多 2 块；同一种可点两次）。</div>';
+                if (!ix.dev.length) body = '<div class="hint">在右侧点亮起的板块（最多 2 块）。</div>';
                 else {
                     const rem = s.getRemainingTiles(this.me);
                     const lv = {};
@@ -730,7 +836,7 @@ class App {
                 break;
             case 'scout':
                 title = '侦察';
-                body = `<div class="hint">在手牌中选 3 张弃掉，换 1 张万能地点 + 1 张万能产业。</div><div class="row"><span>已选</span><b>${ix.scout.length} / 3</b></div>`;
+                body = `<div class="hint">弃 3 张牌，换两张万能牌。</div><div class="row"><span>已选</span><b>${ix.scout.length} / 3</b></div>`;
                 ready = ix.scout.length === 3; okLabel = '确认侦察';
                 break;
             case 'pass':
@@ -753,7 +859,7 @@ class App {
             const src = s.findIronSource(this.me).slice(0, t.cost.iron);
             out.push(`铁：${src.map(x => x.free ? `${locationName(this.splitKey(x.key)[0])} 的铁厂（免费）` : `铁市场 £${x.price}`).join('；')}`);
         }
-        return out.length ? `<div class="src" title="按规则自动选择：煤取最近的相连煤矿，其次市场；铁优先任意铁厂">${out.join('<br>')}<br><span class="muted">资源来源按规则自动选择最优</span></div>` : '';
+        return out.length ? `<div class="src" title="按规则自动选择：煤取最近的相连煤矿，其次市场；铁优先任意铁厂">${out.join('<br>')}</div>` : '';
     }
 
     sellPlan() { return this.ix.sell.map(key => ({ key, useMerchantBeer: this.ix.beerM[key] !== false })); }
@@ -789,6 +895,7 @@ class App {
 
     // ---------------------------------------------------------------- modals
     openModal(title, html, locked = false) {
+        this.modalKind = null;
         $('#modal-title').textContent = title;
         $('#modal-body').innerHTML = html;
         $('#modal .modal-box').classList.remove('wide');
@@ -801,11 +908,11 @@ class App {
     handleBonus(m) {
         const pb = m.pendingBonus;
         if (!pb || pb.waiting != null || !pb.types) { if (this.modalKind === 'bonus') this.closeModal(); return; }
-        this.modalKind = 'bonus';
         this.openModal('商人奖励：免费发展', `<p>卖给格洛斯特的商人啤酒，获得 ${pb.count} 次免费发展（不花铁）。选择要移除的板块：</p>
           <div class="opts">${pb.types.map(t => { const r = this.state.getRemainingTiles(this.me)[t]; const lv = r.tiles[0].level;
             return `<button class="opt" data-bt="${t}"><img src="${tileImg(t, lv, false, this.me)}" alt=""><span><b>${indName(t)} ${lv} 级</b></span></button>`; }).join('')}</div>
           <div class="btns"><button data-bt="skip">放弃奖励</button></div>`, true);
+        this.modalKind = 'bonus';
         $('#modal-body').querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { this.net.send({ t: 'bonus', type: b.dataset.bt }); this.closeModal(); });
     }
 
@@ -818,8 +925,8 @@ class App {
         localStorage.setItem('bb3d_seen', JSON.stringify(this.seenEvents));
         const s = this.state;
         if (ev.kind === 'scoring') {
-            this.openModal(ev.title || '时代计分', `<table class="tbl"><tr><th>玩家</th><th>连线分</th><th>产业分</th><th>总分</th></tr>${ev.scores.map(x => {
-                const p = s.players[x.playerId]; return `<tr><td style="color:${p.color}">${esc(p.name)}</td><td>${x.linkVP}</td><td>${x.industryVP}</td><td><b>${x.totalVP}</b></td></tr>`; }).join('')}</table>
+            this.openModal(ev.title || '时代计分', `<table class="tbl score"><tr><th>玩家</th><th>连线分</th><th>产业分</th><th>总分</th></tr>${ev.scores.map(x => {
+                const p = s.players[x.playerId]; return `<tr class="sr" data-l="${x.linkVP}" data-i="${x.industryVP}" data-t="${x.totalVP}"><td style="color:${p.color}">${ownerBadge(p, x.playerId)}${esc(p.name)}</td><td class="c-l">${x.linkVP}</td><td class="c-i">${x.industryVP}</td><td><b class="c-t">${x.totalVP}</b></td></tr>`; }).join('')}</table>
               <p class="muted">进入铁路时代：运河与 1 级产业已移除。</p><div class="btns"><button class="primary" data-x>继续</button></div>`);
         } else if (ev.kind === 'gameover') {
             const sorted = [...s.players].sort((a, b) => (b.vp - a.vp) || (s.getIncomeLevel(b.id) - s.getIncomeLevel(a.id)) || (b.money - a.money));
@@ -829,6 +936,23 @@ class App {
             const r = $('#modal-body [data-restart]'); if (r) r.onclick = () => { this.net.send({ t: 'restart' }); this.closeModal(); };
         }
         const x = $('#modal-body [data-x]'); if (x) x.onclick = () => this.closeModal();
+        this.animateScores();
+    }
+    // era scoring: rows come in one by one, numbers count up, "+N★" floats out
+    animateScores() {
+        const rows = [...document.querySelectorAll('#modal-body tr.sr')];
+        const sp = this.fx.speed;
+        if (!rows.length || !sp) return;
+        rows.forEach(r => r.classList.add('pre'));
+        rows.forEach((r, i) => setTimeout(() => {
+            r.classList.remove('pre'); r.classList.add('in');
+            const L = +r.dataset.l, I = +r.dataset.i, T = +r.dataset.t;
+            this.fx.roll(r.querySelector('.c-l'), 0, L); setTimeout(() => this.fx.roll(r.querySelector('.c-i'), 0, I), 200 / sp);
+            this.fx.roll(r.querySelector('.c-t'), T - L - I, T);
+            const b = r.getBoundingClientRect();
+            setTimeout(() => this.fx.float(b.right - 30, b.top, `+${L + I}★`, 'vp big'), 250 / sp);
+            this.fx.sfx.play('score');
+        }, (250 + i * 420) / sp));
     }
 
     seatsModal() {

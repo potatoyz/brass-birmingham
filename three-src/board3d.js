@@ -72,8 +72,9 @@ export class Board3D {
         this.boardMesh = board;
 
         this.gSlots = new Group(); this.gLinks = new Group(); this.gTiles = new Group();
-        this.gBuiltLinks = new Group(); this.gMerch = new Group(); this.gMarket = new Group();
-        sc.add(this.gSlots, this.gLinks, this.gTiles, this.gBuiltLinks, this.gMerch, this.gMarket);
+        this.gBuiltLinks = new Group(); this.gMerch = new Group(); this.gMarket = new Group(); this.gFx = new Group();
+        sc.add(this.gSlots, this.gLinks, this.gTiles, this.gBuiltLinks, this.gMerch, this.gMarket, this.gFx);
+        this.anims = []; this.fxSpeed = 1; this.merchPos = [];
 
         this.buildSlots();
         this.buildLinkHits();
@@ -253,6 +254,7 @@ export class Board3D {
         this.viewerId = viewerId;
         const clear = g => { for (const ch of [...g.children]) { g.remove(ch); ch.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); } };
         clear(this.gTiles); clear(this.gBuiltLinks); clear(this.gMerch); clear(this.gMarket);
+        this.finishAnims();
         for (const [key, t] of Object.entries(state.boardIndustries || {})) this.addTile(key, t);
         for (const [farm, t] of Object.entries(state.breweryFarmTiles || {})) if (t) this.addTile(`${farm}_0`, t, `farm_${farm}`);
         for (const [cid, l] of Object.entries(state.boardLinks || {})) this.addLink(cid, l);
@@ -283,6 +285,7 @@ export class Board3D {
                 const c = new Mesh(geo, m);
                 const w = toWorld(sp[i][0] / 2048, sp[i][1] / 2048, 0.14);
                 c.position.copy(w); c.rotation.y = ((i * 37) % 11 - 5) * 0.02;
+                c.userData = { kind: 'cube', market: kind, idx: i };
                 c.castShadow = !this.low;
                 this.gMarket.add(c);
             }
@@ -340,13 +343,13 @@ export class Board3D {
         g.rotation.y = -p.angle;
         const ud = { kind: 'builtLink', connId, link: l, playerId: l.playerId };
         g.traverse(o => { o.userData = ud; });
-        g.userData = ud;
+        g.userData = ud; g.name = 'linkTile';
         this.gBuiltLinks.add(g);
         // owner-coloured band along the whole printed route (and farm spur)
         const band = new Group();
         const bandM = new MeshBasicMaterial({ color: PLAYER_HEX[l.playerId] || 0x888888, transparent: true, opacity: 0.8, depthWrite: false, side: DoubleSide });
         for (const pts of [p.line, p.spur].filter(Boolean)) band.add(new Mesh(this.ribbon(pts, 0.17, 0.008), bandM));
-        band.userData = ud; band.traverse(o => { o.userData = ud; });
+        band.userData = ud; band.traverse(o => { o.userData = ud; }); band.name = 'linkBand';
         this.gBuiltLinks.add(band);
     }
 
@@ -452,6 +455,7 @@ export class Board3D {
                     const b = new Mesh(new CylinderGeometry(0.1, 0.1, 0.22, 14), this.mat(0x9a6a33));
                     b.rotation.z = Math.PI / 2; b.position.set(0, 0.17, 0.27); b.castShadow = !this.low; g.add(b);
                 }
+                this.merchPos[i] = P.clone().setY(0.2);
                 const ud = { kind: 'merchant', index: i, mt };
                 g.traverse(o => { o.userData = ud; });
                 this.gMerch.add(g);
@@ -631,7 +635,129 @@ export class Board3D {
         return { x: rect.left + (v.x + 1) / 2 * rect.width, y: rect.top + (1 - v.y) / 2 * rect.height };
     }
 
+    // ------------------------------------------------------------------ animation
+    // Small tween runner: step(k) gets 0..1; delays and durations scale with
+    // fxSpeed (0 = jump to the end). Rendering stays on-demand: only while
+    // something moves is the scene redrawn every frame.
+    animate(ms, step, delay = 0) {
+        return new Promise(res => {
+            const sp = this.fxSpeed;
+            if (!(sp > 0)) { step(1); this.dirty = true; res(); return; }
+            this.anims.push({ t0: performance.now() + delay / sp, dur: Math.max(1, ms / sp), step, res });
+            this.dirty = true;
+        });
+    }
+    finishAnims() { const a = this.anims; this.anims = []; for (const x of a) { try { x.step(1); } catch (e) { /* view rebuilt */ } x.res(); } this.clearFx(); }
+    clearFx() { for (const ch of [...this.gFx.children]) this.gFx.remove(ch); }
+
+    tileGroup(key) { return this.gTiles.children.find(g => g.userData.key === key) || null; }
+    tileWorld(key) {
+        const g = this.tileGroup(key); if (g) return g.position.clone().setY(0.2);
+        const m = this.slotMeshes.get(key) || this.slotMeshes.get(key.replace(/^farm_/, '') + '_0');
+        return m ? m.position.clone().setY(0.2) : null;
+    }
+    linkWorld(id) { const i = this.linkInfo.get(id); return i ? toWorld(i.u, i.v, 0.15) : null; }
+    marketWorld(kind, i) { const sp = this.marketSpaces(kind)[i]; return sp ? toWorld(sp[0] / 2048, sp[1] / 2048, 0.14) : null; }
+    marketCube(kind, i) { return this.gMarket.children.find(c => c.userData.market === kind && c.userData.idx === i) || null; }
+    project(v) {
+        this.camera.updateMatrixWorld();
+        const p = v.clone().project(this.camera), r = this.renderer.domElement.getBoundingClientRect();
+        return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+    }
+
+    // a built tile drops in from above, bounces and kicks up dust
+    dropTile(key, delay = 0) {
+        const g = this.tileGroup(key); if (!g) return Promise.resolve();
+        const y0 = g.position.y; g.visible = false;
+        return this.animate(560, k => {
+            g.visible = true;
+            g.position.y = y0 + 3.2 * (1 - bounce(k));
+            g.rotation.y = (1 - k) * 0.35;
+        }, delay).then(() => this.impact(g.position.clone().setY(0.05), PLAYER_HEX[g.userData.tile.playerId]));
+    }
+    impact(pos, color = 0xffd34d) {
+        const ring = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ map: this.ringTex(), color, transparent: true, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2; ring.position.copy(pos).setY(0.03); this.gFx.add(ring);
+        const parts = [];
+        if (!this.low) for (let i = 0; i < 10; i++) {
+            const d = new Mesh(new PlaneGeometry(0.26, 0.26), new MeshBasicMaterial({ map: this.glowTex(), color: 0xcdb48c, transparent: true, depthWrite: false }));
+            d.rotation.x = -Math.PI / 2; d.position.copy(pos).setY(0.08);
+            d.userData.dir = [Math.cos(i / 10 * Math.PI * 2 + Math.random() * 0.4), Math.sin(i / 10 * Math.PI * 2 + Math.random() * 0.4)];
+            this.gFx.add(d); parts.push(d);
+        }
+        return this.animate(520, k => {
+            const e = easeOut(k);
+            ring.scale.setScalar(0.6 + 1.8 * e); ring.material.opacity = 0.9 * (1 - k);
+            for (const d of parts) {
+                d.position.x = pos.x + d.userData.dir[0] * 0.75 * e; d.position.z = pos.z + d.userData.dir[1] * 0.75 * e;
+                d.position.y = 0.08 + 0.25 * Math.sin(Math.PI * k); d.material.opacity = 0.7 * (1 - k); d.scale.setScalar(1 + k);
+            }
+            if (k >= 1) { this.gFx.remove(ring); parts.forEach(d => this.gFx.remove(d)); }
+        });
+    }
+    // a link grows along its printed route, then its tile pops in
+    growLink(connId, delay = 0) {
+        const parts = this.gBuiltLinks.children.filter(g => g.userData.connId === connId);
+        if (!parts.length) return Promise.resolve();
+        const bands = parts.filter(g => g.name === 'linkBand').flatMap(g => g.children);
+        const tiles = parts.filter(g => g.name === 'linkTile');
+        bands.forEach(m => m.geometry.setDrawRange(0, 0)); tiles.forEach(t => { t.visible = false; });
+        return this.animate(650, k => {
+            for (const m of bands) { const n = m.geometry.index.count; m.geometry.setDrawRange(0, k >= 1 ? Infinity : Math.floor(n * easeInOut(Math.min(1, k / 0.75)) / 6) * 6); }
+            for (const t of tiles) { t.visible = k > 0.55; const q = Math.max(0, (k - 0.55) / 0.45); t.scale.setScalar(0.4 + 0.6 * back(q)); }
+        }, delay).then(() => { const p = this.linkWorld(connId); if (p) this.impact(p.setY(0.05), PLAYER_HEX[parts[0].userData.playerId]); });
+    }
+    // sold tile flips over in the air
+    flipTile(key, delay = 0) {
+        const g = this.tileGroup(key); if (!g) return Promise.resolve();
+        const y0 = g.position.y;
+        g.rotation.z = Math.PI;
+        return this.animate(620, k => {
+            const e = easeInOut(k);
+            g.rotation.z = Math.PI * (1 - e); g.position.y = y0 + Math.sin(Math.PI * k) * 0.9;
+        }, delay).then(() => this.impact(g.position.clone().setY(0.05), 0xffe08a));
+    }
+    // coal / iron cube or beer barrel along an arc
+    fly(kind, from, to, delay = 0, onLand) {
+        if (!from || !to) return Promise.resolve();
+        let m;
+        if (kind === 'beer') { m = new Mesh(new CylinderGeometry(0.11, 0.11, 0.24, 14), this.mat(0x9a6a33)); }
+        else m = new Mesh(new BoxGeometry(0.22, 0.22, 0.22), this.mat(kind === 'coal' ? 0x1d1d1d : 0xe07a2c, { emissive: kind === 'coal' ? 0x222222 : 0x331100 }));
+        m.visible = false; this.gFx.add(m);
+        const h = 1.4 + from.distanceTo(to) * 0.18;
+        return this.animate(520, k => {
+            m.visible = k < 1;
+            const e = easeInOut(k);
+            m.position.lerpVectors(from, to, e); m.position.y += Math.sin(Math.PI * e) * h;
+            m.rotation.set(e * 5, e * 3, kind === 'beer' ? Math.PI / 2 : e * 2);
+            if (k >= 1) { this.gFx.remove(m); onLand && onLand(); }
+        }, delay);
+    }
+    // a soft pulse ring at a point (merchant bonus, develop, …)
+    pulse(pos, color = 0xffd34d, delay = 0) { return this.animate(1, () => {}, delay).then(() => this.impact(pos, color)); }
+
+    ringTex() {
+        if (this.texCache.has('ring')) return this.texCache.get('ring');
+        const c = document.createElement('canvas'); c.width = c.height = 128;
+        const x = c.getContext('2d');
+        const gr = x.createRadialGradient(64, 64, 34, 64, 64, 62);
+        gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.55, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+        const t = new CanvasTexture(c); this.texCache.set('ring', t); return t;
+    }
+
     tick(t) {
+        if (this.anims.length) {
+            const now = performance.now();
+            this.anims = this.anims.filter(a => {
+                if (now < a.t0) return true;
+                const k = Math.min(1, (now - a.t0) / a.dur);
+                a.step(k);
+                if (k >= 1) { a.res(); return false; }
+                return true;
+            });
+            this.dirty = true;
+        }
         const pulsing = this.hl.slots.size || this.hl.links.size || this.hl.tiles.size;
         if (pulsing) {
             const k = 0.75 + 0.25 * Math.sin(t / 260);
@@ -642,4 +768,15 @@ export class Board3D {
         this.dirty = false;
         this.renderer.render(this.scene, this.camera);
     }
+}
+
+const easeOut = k => 1 - (1 - k) ** 3;
+const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
+const back = k => { const c = 1.70158; return 1 + (c + 1) * (k - 1) ** 3 + c * (k - 1) ** 2; };
+function bounce(k) {
+    const n = 7.5625, d = 2.75;
+    if (k < 1 / d) return n * k * k;
+    if (k < 2 / d) return n * (k -= 1.5 / d) * k + 0.75;
+    if (k < 2.5 / d) return n * (k -= 2.25 / d) * k + 0.9375;
+    return n * (k -= 2.625 / d) * k + 0.984375;
 }
