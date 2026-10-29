@@ -63,6 +63,8 @@ ok('popup log shows details', await page.evaluate(() => document.querySelectorAl
 await page.screenshot({ path: `${SHOTS}/log2-1280-popup.png` });
 await page.click('#btn-log'); await sleep(200);
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); await sleep(800);
+// switching to mobile emulation reloads the page: wait for the rejoin + log
+await page.waitForFunction(() => window.__bb3d && __bb3d.state && __bb3d.msg && __bb3d.msg.log && document.querySelector('#log'), { timeout: 30000 }); await sleep(800);
 await page.evaluate(() => document.body.classList.add('show-log')); await sleep(400);
 ok('phone popup shows details', await page.evaluate(() => document.querySelectorAll('#log .le .ld').length >= 5));
 await page.screenshot({ path: `${SHOTS}/log2-mobile.png` });

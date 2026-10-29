@@ -34,6 +34,8 @@ const sizes = [
 let shot = false;
 for (const [tag, vp] of sizes) {
     await page.setViewport(vp); await sleep(700);
+    // isMobile changes reload the page: wait for the rejoin (slow over a real network)
+    await page.waitForFunction(() => window.__bb3d && __bb3d.state && document.querySelectorAll('#hand .card').length > 0, { timeout: 30000 }); await sleep(300);
     const touch = !!vp.hasTouch;
     let bad = 0, n = 0, worst = null;
     for (let round = 0; round < 3; round++) {
@@ -77,6 +79,8 @@ for (const [tag, vp] of sizes) {
 }
 // the preview never eats clicks on the hand
 await page.setViewport({ width: 1280, height: 800 }); await sleep(600);
+// leaving phone emulation reloads the page (isMobile change): wait for the rejoin
+await page.waitForFunction(() => window.__bb3d && __bb3d.state && document.querySelector('#hand .card'), { timeout: 30000 }); await sleep(300);
 const pe = await page.$eval('#preview', e => getComputedStyle(e).pointerEvents);
 ok('preview has pointer-events:none', pe === 'none');
 const c0 = await (await page.$('#hand .card')).boundingBox();
